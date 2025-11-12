@@ -1,0 +1,132 @@
+.hud-container {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  z-index: 1000;
+  pointer-events: none;
+  font-family: 'Courier New', monospace;
+}
+
+.hud-panel {
+  background: rgba(6, 16, 24, 0.85);
+  border: 2px solid rgba(28, 195, 255, 0.6);
+  border-radius: 8px;
+  padding: 16px;
+  min-width: 280px;
+  box-shadow: 0 0 20px rgba(28, 195, 255, 0.3),
+              inset 0 0 20px rgba(28, 195, 255, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+.hud-title {
+  color: #1cc3ff;
+  font-size: 18px;
+  font-weight: bold;
+  margin-bottom: 12px;
+  text-align: center;
+  letter-spacing: 3px;
+  text-shadow: 0 0 10px rgba(28, 195, 255, 0.8);
+}
+
+.freeze-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 68, 102, 0.2);
+  border: 1px solid rgba(255, 68, 102, 0.6);
+  border-radius: 4px;
+  padding: 6px 10px;
+  margin-bottom: 12px;
+  animation: pulse-freeze 1s infinite;
+}
+
+@keyframes pulse-freeze {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.freeze-icon {
+  font-size: 16px;
+  filter: drop-shadow(0 0 4px #ff4466);
+}
+
+.freeze-text {
+  color: #ff4466;
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 2px;
+}
+
+.hud-item {
+  margin-bottom: 10px;
+}
+
+.hud-label {
+  color: #77c0ff;
+  font-size: 11px;
+  font-weight: bold;
+  margin-bottom: 4px;
+  letter-spacing: 1px;
+}
+
+.hud-bar-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hud-bar-track {
+  position: relative;
+  flex: 1;
+  height: 12px;
+  background: rgba(15, 59, 85, 0.4);
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(28, 195, 255, 0.2);
+}
+
+.hud-bar-center {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.3);
+  z-index: 1;
+}
+
+.hud-bar-fill {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  transition: width 0.15s ease, left 0.15s ease;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.hud-bar-track-simple {
+  position: relative;
+  flex: 1;
+  height: 12px;
+  background: rgba(15, 59, 85, 0.4);
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(28, 195, 255, 0.2);
+}
+
+.hud-bar-fill-simple {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  transition: width 0.2s ease;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.hud-value {
+  color: #1cc3ff;
+  font-size: 11px;
+  font-weight: bold;
+  min-width: 40px;
+  text-align: right;
+  text-shadow: 0 0 6px rgba(28, 195, 255, 0.6);
+}
