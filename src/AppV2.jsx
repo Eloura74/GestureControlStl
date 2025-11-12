@@ -10,6 +10,7 @@ import GesturesHUD from "./components/GesturesHUDV2";
 import WebcamPiP from "./components/WebcamPiP";
 import ProfileSelector from "./components/ProfileSelector";
 import StateBadge from "./components/StateBadge";
+import StopButton from "./components/StopButton";
 
 const WS_URL = "ws://127.0.0.1:8765/ws";
 const RECONNECT_DELAYS = [500, 1000, 2000, 5000, 5000]; // ms
@@ -19,6 +20,7 @@ export default function AppV2() {
   const wsRef = useRef(null);
   const reconnectAttempt = useRef(0);
   const reconnectTimeout = useRef(null);
+  const heartbeatInterval = useRef(null);
   
   const [wsStatus, setWsStatus] = useState("connecting");
   const [currentMode, setCurrentMode] = useState("IDLE");
@@ -34,10 +36,10 @@ export default function AppV2() {
   });
 
   useEffect(() => {
-    // Scene 3D
+    // Scene 3D avec fond noir pur pour effet holographique
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a0a0f);
-    scene.fog = new THREE.Fog(0x0a0a0f, 5, 15);
+    scene.background = new THREE.Color(0x000000);
+    scene.fog = new THREE.Fog(0x000000, 5, 15);
 
     const camera = new THREE.PerspectiveCamera(
       55,
@@ -47,9 +49,12 @@ export default function AppV2() {
     );
     camera.position.set(0, 0, stateRef.current.distance);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({ 
+      antialias: true,
+      powerPreference: "high-performance"
+    });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Max 2x pour performance
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     mountRef.current.appendChild(renderer.domElement);
 
     // Lumières
@@ -62,8 +67,9 @@ export default function AppV2() {
     const root = new THREE.Group();
     scene.add(root);
 
-    // Matériau Holographique avec Fresnel
-    const holoMaterial = createFresnelMaterial();
+    // Matériau Wireframe Holographique (avec uniform time)
+    const wireframeMaterial = createHolographicWireframeMaterial();
+    const materialRef = { current: wireframeMaterial };
 
     // Loader STL
     const loader = new STLLoader();
@@ -72,7 +78,10 @@ export default function AppV2() {
       (geo) => {
         geo.computeVertexNormals();
         geo.center();
-        const mesh = new THREE.Mesh(geo, holoMaterial);
+        
+        // MESH avec matériau wireframe blanc/gris
+        const mesh = new THREE.Mesh(geo, wireframeMaterial);
+        
         const box = new THREE.Box3().setFromObject(mesh);
         const size = new THREE.Vector3();
         box.getSize(size);
@@ -86,7 +95,7 @@ export default function AppV2() {
         // Fallback: cube
         const cube = new THREE.Mesh(
           new THREE.BoxGeometry(1, 1, 1),
-          holoMaterial
+          wireframeMaterial
         );
         root.add(cube);
         prepareExplode(root);
@@ -96,7 +105,7 @@ export default function AppV2() {
     // Préparation explosion
     function prepareExplode(group) {
       group.traverse((child) => {
-        if (child.isMesh) {
+        if (child.isPoints || child.isMesh) {
           const geo = child.geometry;
           const pos = geo.attributes.position;
           const count = pos.count;
@@ -132,6 +141,18 @@ export default function AppV2() {
         console.log("✅ [WS] Connecté au serveur V2");
         setWsStatus("connected");
         reconnectAttempt.current = 0;
+        
+        // Heartbeat pour garder la connexion alive
+        if (heartbeatInterval.current) clearInterval(heartbeatInterval.current);
+        heartbeatInterval.current = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            try {
+              ws.send(JSON.stringify({ type: "ping" }));
+            } catch (e) {
+              console.error("❌ Erreur envoi ping:", e);
+            }
+          }
+        }, 15000); // Ping toutes les 15 secondes
       };
 
       ws.onmessage = (ev) => {
@@ -190,18 +211,27 @@ export default function AppV2() {
       ws.onclose = () => {
         console.warn("⚠️  [WS] Connexion fermée");
         setWsStatus("disconnected");
-
-        // Reconnexion exponentielle
-        if (reconnectAttempt.current < RECONNECT_DELAYS.length) {
-          const delay = RECONNECT_DELAYS[reconnectAttempt.current];
-          console.log(`🔄 Reconnexion dans ${delay}ms...`);
-          reconnectTimeout.current = setTimeout(() => {
-            reconnectAttempt.current++;
-            connectWebSocket();
-          }, delay);
-        } else {
-          console.error("❌ Nombre max de reconnexions atteint");
+        
+        // Nettoyer heartbeat
+        if (heartbeatInterval.current) {
+          clearInterval(heartbeatInterval.current);
+          heartbeatInterval.current = null;
         }
+
+        // Reconnexion automatique
+        if (reconnectTimeout.current) {
+          clearTimeout(reconnectTimeout.current);
+        }
+        
+        const delay = reconnectAttempt.current < RECONNECT_DELAYS.length 
+          ? RECONNECT_DELAYS[reconnectAttempt.current]
+          : 5000;
+          
+        console.log(`🔄 Reconnexion dans ${delay}ms... (tentative ${reconnectAttempt.current + 1})`);
+        reconnectTimeout.current = setTimeout(() => {
+          reconnectAttempt.current++;
+          connectWebSocket();
+        }, delay);
       };
     }
 
@@ -211,7 +241,13 @@ export default function AppV2() {
     const clock = new THREE.Clock();
     function animate() {
       requestAnimationFrame(animate);
-      clock.getDelta();
+      const deltaTime = clock.getDelta();
+      const elapsedTime = clock.getElapsedTime();
+
+      // Mettre à jour l'uniform time pour l'animation du shader
+      if (materialRef.current && materialRef.current.uniforms) {
+        materialRef.current.uniforms.time.value = elapsedTime;
+      }
 
       const s = stateRef.current;
       const lerp = (a, b, t) => a + (b - a) * t;
@@ -226,7 +262,7 @@ export default function AppV2() {
       // Explosion
       const factor = s.explode;
       root.traverse((child) => {
-        if (child.isMesh) {
+        if (child.isPoints || child.isMesh) {
           const g = child.geometry;
           if (!g.userData.positions0) return;
           const pos = g.attributes.position;
@@ -287,6 +323,7 @@ export default function AppV2() {
       window.removeEventListener("resize", handleResize);
       window.removeEventListener("keypress", handleKeyPress);
       if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
+      if (heartbeatInterval.current) clearInterval(heartbeatInterval.current);
       if (wsRef.current) wsRef.current.close();
       mountRef.current?.removeChild(renderer.domElement);
     };
@@ -295,6 +332,7 @@ export default function AppV2() {
   return (
     <>
       <div ref={mountRef} />
+      <StopButton />
       <GesturesHUD />
       <WebcamPiP />
       <ProfileSelector />
@@ -305,46 +343,77 @@ export default function AppV2() {
 
 
 /**
- * Crée un matériau holographique avec effet Fresnel
+ * Crée un matériau holographique FUTURISTE (cyan + glow + scanlines)
  */
-function createFresnelMaterial() {
+function createHolographicWireframeMaterial() {
   return new THREE.ShaderMaterial({
     uniforms: {
-      baseColor: { value: new THREE.Color(0x1cc3ff) },
-      edgeColor: { value: new THREE.Color(0x7fd4ff) },
-      fresnelPower: { value: 3.0 }
+      time: { value: 0 }
     },
     vertexShader: `
       varying vec3 vNormal;
       varying vec3 vViewDir;
+      varying vec3 vPosition;
+      varying vec3 vWorldPosition;
       
       void main() {
         vNormal = normalize(normalMatrix * normal);
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
         vViewDir = normalize(-mvPosition.xyz);
+        vPosition = position;
+        vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
     fragmentShader: `
-      uniform vec3 baseColor;
-      uniform vec3 edgeColor;
-      uniform float fresnelPower;
-      
+      uniform float time;
       varying vec3 vNormal;
       varying vec3 vViewDir;
+      varying vec3 vPosition;
+      varying vec3 vWorldPosition;
       
       void main() {
-        float fresnel = pow(1.0 - dot(normalize(vNormal), normalize(vViewDir)), fresnelPower);
-        fresnel = clamp(fresnel, 0.0, 1.0);
+        // Couleurs holographiques (cyan électrique uniforme)
+        vec3 baseColor = vec3(0.2, 0.9, 1.0); // Cyan lumineux
+        vec3 edgeColor = vec3(0.6, 1.0, 1.0); // Cyan très clair (pas blanc pur)
         
-        vec3 color = mix(baseColor, edgeColor, fresnel);
-        float alpha = 0.75 + fresnel * 0.25;
+        // Effet Fresnel CONTRÔLÉ (seulement sur les vrais bords)
+        float viewDot = dot(normalize(vNormal), normalize(vViewDir));
+        float fresnel = pow(1.0 - abs(viewDot), 2.5);
+        fresnel = clamp(fresnel * 0.7, 0.0, 0.7); // Limité à 70% max
         
-        gl_FragColor = vec4(color, alpha);
+        // Wireframe procedural NET
+        vec3 grid = fract(vPosition * 25.0);
+        float gridLine = min(min(grid.x, grid.y), grid.z);
+        float wireframe = 1.0 - smoothstep(0.0, 0.05, gridLine);
+        
+        // Scanlines SUBTILES
+        float scanline = sin(vWorldPosition.y * 20.0 + time * 2.0) * 0.5 + 0.5;
+        scanline = pow(scanline, 5.0) * 0.12;
+        
+        // Pulsation SUBTILE
+        float pulse = sin(time * 1.5) * 0.08 + 0.92;
+        
+        // Composition ÉQUILIBRÉE (pas de double fresnel qui crée du blanc)
+        vec3 finalColor = mix(baseColor, edgeColor, fresnel);
+        finalColor += vec3(wireframe * 0.7);
+        finalColor += vec3(scanline * 0.5);
+        finalColor *= pulse;
+        
+        // Empêcher les faces plates de devenir trop blanches
+        float flatness = abs(viewDot);
+        finalColor = mix(finalColor, baseColor, flatness * 0.3);
+        
+        // Alpha CONTRÔLÉ
+        float alpha = 0.45 + fresnel * 0.35 + wireframe * 0.5;
+        alpha = clamp(alpha, 0.35, 0.85); // Max 85% pour éviter blanc opaque
+        
+        gl_FragColor = vec4(finalColor, alpha);
       }
     `,
     transparent: true,
     side: THREE.DoubleSide,
-    depthWrite: false
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
   });
 }

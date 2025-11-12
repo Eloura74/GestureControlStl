@@ -14,13 +14,14 @@ import cv2
 import numpy as np
 import mediapipe as mp
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 # Core modules v2
-from core.config import config
-from core.kalman import Kalman2D, Kalman1D, AdaptiveDeadzone
+from core.config import Config
+from core.kalman import Kalman1D, Kalman2D, AdaptiveDeadzone
 from core.fsm import GestureFSM, GestureMode
 
 # Setup logging
@@ -32,6 +33,18 @@ logger = logging.getLogger(__name__)
 
 # FastAPI app
 app = FastAPI(title="Holo-Control V2.0", version="2.0.0")
+
+# CORS middleware pour permettre les requêtes depuis le frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # En production, spécifier les origines exactes
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Configuration
+config = Config()
 
 # MediaPipe
 mp_hands = mp.solutions.hands
@@ -357,9 +370,25 @@ async def websocket_endpoint(websocket: WebSocket):
     
     try:
         while True:
-            # Heartbeat/ping-pong
-            await asyncio.wait_for(websocket.receive_text(), timeout=config.get('network.timeout', 40))
-    except (WebSocketDisconnect, asyncio.TimeoutError):
+            # Recevoir et gérer les messages (ping/pong pour keep-alive)
+            try:
+                message = await asyncio.wait_for(
+                    websocket.receive_text(), 
+                    timeout=60.0  # 60 secondes (client ping toutes les 15s)
+                )
+                # Gérer les pings
+                try:
+                    msg_data = json.loads(message)
+                    if msg_data.get("type") == "ping":
+                        await websocket.send_text(json.dumps({"type": "pong"}))
+                except:
+                    pass  # Message non-JSON, ignorer
+            except asyncio.TimeoutError:
+                logger.warning("⚠️ WebSocket timeout - pas de ping reçu")
+                break
+    except WebSocketDisconnect:
+        pass
+    finally:
         clients.discard(websocket)
         logger.info(f"❌ WebSocket client disconnected (remaining: {len(clients)})")
 
@@ -393,19 +422,55 @@ async def set_profile(profile_name: str):
         return JSONResponse({"status": "ok", "profile": profile_name})
     return JSONResponse({"status": "error", "message": "Invalid profile"}, status_code=400)
 
-
 @app.get("/api/stats")
 async def get_stats():
     """Retourne les statistiques FSM"""
-    if gesture_processor:
-        return JSONResponse(gesture_processor.fsm.get_stats())
-    return JSONResponse({"error": "Processor not initialized"}, status_code=503)
+    if gesture_processor and gesture_processor.fsm:
+        stats = gesture_processor.fsm.get_stats()
+        return JSONResponse(stats)
+    return JSONResponse({"error": "FSM not initialized"}, status_code=503)
+
+
+@app.post("/api/shutdown")
+async def shutdown_server():
+    """Arrête proprement le serveur"""
+    logger.info(" Demande d'arrêt du serveur reçue...")
+    
+    # Fermer tous les clients WebSocket
+    for client in list(clients):
+        try:
+            await client.close()
+        except:
+            pass
+    clients.clear()
+    
+    # Libérer la caméra
+    if gesture_processor and hasattr(gesture_processor, 'cap'):
+        if gesture_processor.cap:
+            gesture_processor.cap.release()
+            logger.info(" Caméra libérée")
+    
+    # Arrêter le serveur après un court délai
+    import asyncio
+    asyncio.create_task(stop_server())
+    
+    return JSONResponse({"status": "Serveur en cours d'arrêt..."})
+
+async def stop_server():
+    """Arrête le serveur Uvicorn après un délai"""
+    import asyncio
+    await asyncio.sleep(1)
+    logger.info(" Arrêt du serveur...")
+    import os
+    import signal
+    os.kill(os.getpid(), signal.SIGINT)
 
 
 @app.on_event("startup")
 async def startup():
     """Démarrage du serveur"""
     logger.info("\n" + "="*60)
+    logger.info(" HOLO-CONTROL V2.0 - SERVEUR ULTRA-OPTIMISÉ")
     logger.info("🎮 HOLO-CONTROL V2.0 - SERVEUR ULTRA-OPTIMISÉ")
     logger.info("="*60)
     logger.info(f"📡 WebSocket: ws://{config.server.get('host')}:{config.server.get('port')}/ws")
