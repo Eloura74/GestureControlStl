@@ -1,0 +1,21 @@
+# HOLO-CONTROL V2.0 - Dépendances Python
+# Installation : pip install -r requirements_v2.txt
+
+# Core
+opencv-python>=4.8.0
+mediapipe>=0.10.11
+numpy>=1.24.0
+
+# Backend V2
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+websockets>=12.0
+
+# Configuration
+toml>=0.10.2
+
+# Optional - Performance monitoring
+# psutil>=5.9.0
+
+# Optional - Compression
+# zstandard>=0.21.0

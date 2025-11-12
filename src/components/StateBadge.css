@@ -1,0 +1,58 @@
+.state-badge {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 1000;
+  font-family: 'Courier New', monospace;
+}
+
+.state-mode {
+  background: rgba(10, 10, 20, 0.85);
+  backdrop-filter: blur(10px);
+  border: 2px solid #00ff88;
+  border-radius: 8px;
+  padding: 12px 20px;
+  box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+  transition: all 0.3s ease;
+}
+
+.state-mode:hover {
+  box-shadow: 0 0 30px rgba(0, 255, 136, 0.5);
+  transform: translateY(-2px);
+}
+
+.mode-label {
+  font-size: 16px;
+  font-weight: bold;
+  color: white;
+  text-shadow: 0 0 10px currentColor;
+}
+
+.state-ws {
+  background: rgba(10, 10, 20, 0.75);
+  backdrop-filter: blur(8px);
+  border-radius: 6px;
+  padding: 8px 16px;
+  text-align: right;
+  transition: all 0.3s ease;
+}
+
+.ws-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-shadow: 0 0 8px currentColor;
+}
+
+/* Animations */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.state-mode[style*="ff6600"],
+.state-mode[style*="ffaa00"] {
+  animation: pulse 2s infinite;
+}

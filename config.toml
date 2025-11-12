@@ -1,0 +1,118 @@
+# HOLO-CONTROL V2.0 - Configuration
+# Fichier de configuration central pour tous les paramètres
+
+[server]
+host = "127.0.0.1"
+port = 8765
+fps_limit = 30
+debug_mode = true
+log_level = "INFO"
+
+[camera]
+# Index de la caméra (0 = défaut, 1, 2... pour caméras multiples)
+index = 0
+# Profil de résolution : "high" (720p/30), "medium" (540p/30), "low" (360p/24)
+profile = "medium"
+# Résolution manuelle (si profile = "custom")
+width = 640
+height = 360
+fps = 30
+
+[mediapipe]
+# Complexité du modèle : 0 (rapide), 1 (équilibré), 2 (précis)
+model_complexity = 1
+max_num_hands = 2
+min_detection_confidence = 0.6
+min_tracking_confidence = 0.6
+
+[gestures]
+# Profil actif : "precise", "balanced", "reactive"
+profile = "balanced"
+
+# Profil PRECISE (mouvements fins, très stable)
+[gestures.profiles.precise]
+rot_gain = 1.5
+zoom_gain = 0.4
+smooth = 0.7
+rot_deadzone = 0.0001
+zoom_deadzone = 0.003
+pinch_threshold = 0.08
+
+# Profil BALANCED (recommandé) - ULTRA RÉACTIF pour debug
+[gestures.profiles.balanced]
+rot_gain = 30.0         # MASSIF pour garantir visibilité
+zoom_gain = 5.0         # Zoom visible
+smooth = 0.2            # Presque pas de lissage
+rot_deadzone = 0.00001  # Quasi rien
+zoom_deadzone = 0.001   # Très bas
+pinch_threshold = 0.08
+
+# Profil REACTIVE (réponse immédiate, moins stable)
+[gestures.profiles.reactive]
+rot_gain = 3.0
+zoom_gain = 0.7
+smooth = 0.3
+rot_deadzone = 0.00001
+zoom_deadzone = 0.001
+pinch_threshold = 0.10
+
+[kalman]
+# Filtre Kalman DÉSACTIVÉ (filtre trop agressif pour petits mouvements)
+enabled = false           # DÉSACTIVÉ - empêche rotation
+process_noise = 0.001    # q : bruit du processus
+measurement_noise = 0.005 # r : bruit de mesure
+
+[fsm]
+# Machine à états (transitions)
+dwell_rotate = 80        # ms avant d'entrer en mode ROTATE
+dwell_zoom = 80          # ms avant d'entrer en mode ZOOM
+dwell_explode = 100      # ms avant d'entrer en mode EXPLODE
+dwell_idle = 120         # ms avant retour IDLE
+
+[preview]
+# Aperçu webcam
+enabled = true
+send_every_n_frames = 4
+width = 320
+height = 180
+jpeg_quality = 65
+
+[model]
+# Modèle 3D
+path = "public/models/Frame_Bolt.stl"
+# Format : "stl", "glb", "obj"
+format = "stl"
+# Auto-center et auto-scale
+auto_center = true
+auto_scale = true
+target_size = 1.2
+
+[ui]
+# Interface utilisateur
+show_hud = true
+show_webcam_pip = true
+show_stats = false       # Panneau de stats FPS/latence
+theme = "dark"           # "dark" ou "light"
+
+[hotkeys]
+# Raccourcis clavier
+reset_camera = "r"
+toggle_explode = "e"
+toggle_pip = "p"
+toggle_hud = "h"
+toggle_stats = "f"
+cycle_profile = "g"      # Cycle entre precise/balanced/reactive
+
+[network]
+# WebSocket
+ping_interval = 15       # Ping toutes les 15s
+timeout = 40             # Timeout après 40s
+reconnect_delays = [500, 1000, 2000, 5000, 5000]  # ms
+compress = false         # Compression zlib (pour prod)
+
+[logging]
+# Logs
+directory = "logs"
+max_size_mb = 10
+backup_count = 5
+format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
