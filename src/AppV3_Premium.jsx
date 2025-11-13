@@ -23,16 +23,13 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import GesturesHUD from "./components/GesturesHUDV2";
 import WebcamPiP from "./components/WebcamPiP";
 import HoloControlBar from "./components/HoloControlBar";
-import GestureIndicator from "./components/GestureIndicator";
-import GhostReticule from "./components/GhostReticule";
 import { autoFitMesh, createEnhancedHolographicShader } from "./three/utils";
 import { DirectionalParticleSystem, VolumetricGradient } from "./three/ParticleSystem";
-import { TouchLaserManager } from "./three/LaserPointer";
-import { SliceViewManager, SliceViewKeyboardController } from "./three/SliceViewManager";
 import { GestureRecorder, RecorderUIController } from "./three/GestureRecorder";
 import { MultiSTLManager, STLGalleryController } from "./three/MultiSTLManager";
 import RecorderPanel from "./components/RecorderPanel";
 import ModelGallery from "./components/ModelGallery";
+import MeasureDisplay from "./components/MeasureDisplay";
 
 const WS_URL = "ws://127.0.0.1:8765/ws";
 const RECONNECT_DELAYS = [500, 1000, 2000, 5000, 5000];
@@ -165,20 +162,85 @@ export default function AppV3Premium() {
       blending: THREE.AdditiveBlending
     }));
     scene.add(stars);
+    
+    // EFFET 3b: Particules flottantes holographiques (nouvelle ambiance)
+    const floatingParticlesGeometry = new THREE.BufferGeometry();
+    const floatingPositions = [];
+    for(let i = 0; i < 300; i++) {
+      floatingPositions.push(
+        (Math.random() - 0.5) * 15,
+        (Math.random() - 0.5) * 10 - 5,  // Commence en bas
+        (Math.random() - 0.5) * 15
+      );
+    }
+    floatingParticlesGeometry.setAttribute('position', new THREE.Float32BufferAttribute(floatingPositions, 3));
+    const floatingParticles = new THREE.Points(floatingParticlesGeometry, new THREE.PointsMaterial({
+      color: 0x00ddff,
+      size: 0.05,
+      opacity: 0.6,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      map: createParticleTexture()
+    }));
+    scene.add(floatingParticles);
+    
+    // Fonction pour créer une texture de particule (rond flou)
+    function createParticleTexture() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 32;
+      canvas.height = 32;
+      const ctx = canvas.getContext('2d');
+      const gradient = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+      gradient.addColorStop(0, 'rgba(0, 255, 255, 1)');
+      gradient.addColorStop(0.5, 'rgba(0, 200, 255, 0.5)');
+      gradient.addColorStop(1, 'rgba(0, 150, 255, 0)');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 32, 32);
+      const texture = new THREE.CanvasTexture(canvas);
+      return texture;
+    }
 
     // EFFET 4: Particules directionnelles réactives
     const particleSystem = new DirectionalParticleSystem(scene, 500);
     
-    // EFFET 5: Gradient volumétrique dynamique
-    const volumetricGradient = new VolumetricGradient(scene);
+    // EFFET 5: Gradient volumétrique dynamique (brume holographique)
+    // Brume volumétrique TRÈS subtile (opacité réduite)
+    const volumetricFog = new THREE.Mesh(
+      new THREE.SphereGeometry(20, 32, 32),
+      new THREE.ShaderMaterial({
+        vertexShader: `
+          varying vec3 vPosition;
+          void main() {
+            vPosition = position;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform float time;
+          varying vec3 vPosition;
+          
+          void main() {
+            float dist = length(vPosition);
+            float alpha = smoothstep(20.0, 10.0, dist) * 0.03;  // 0.15 → 0.03 (5x plus subtil)
+            
+            // Gradient bleu foncé → cyan
+            vec3 color = mix(vec3(0.0, 0.05, 0.1), vec3(0.0, 0.4, 0.5), dist / 20.0);
+            
+            gl_FragColor = vec4(color, alpha);
+          }
+        `,
+        uniforms: {
+          time: { value: 0 }
+        },
+        transparent: true,
+        side: THREE.BackSide,
+        depthWrite: false
+      })
+    );
+    scene.add(volumetricFog);
 
-    // EFFET 6: Touch-Laser Mode
-    const touchLaser = new TouchLaserManager(scene, camera);
-    const allMeshes = []; // Tableau pour stocker les meshes à tester
-
-    // EFFET 7: Slice View Mode
-    const sliceManager = new SliceViewManager(scene, renderer);
-    const sliceController = new SliceViewKeyboardController(sliceManager);
+    // Tableau pour stocker les meshes (pour interactions futures)
+    const allMeshes = [];
 
     // Matériau holographique PREMIUM (avec effets avancés)
     const wireframeMaterial = createEnhancedHolographicShader();
@@ -294,8 +356,21 @@ export default function AppV3Premium() {
           s.targetDistance = Math.max(0.3, Math.min(12.0, s.targetDistance - zoom.dz));
           s.explode = Math.max(0, Math.min(1, explode));
           s.mode = mode;
-          s.freeze = freeze;
           s.lastMessage = msg;
+          
+          // Freeze si mode freeze OU playback (plus de freeze automatique pour mesure)
+          const isLocked = freeze || s.playbackActive;
+          s.freeze = isLocked;
+          
+          // HOLO-LOCK : Si mode FREEZE, changer la couleur du shader
+          if (isLocked && wireframeMaterial.uniforms) {
+            // Shader devient vert quand locked
+            if (!wireframeMaterial.userData.originalColor) {
+              wireframeMaterial.userData.originalColor = true;
+            }
+          } else if (wireframeMaterial.userData.originalColor) {
+            wireframeMaterial.userData.originalColor = false;
+          }
 
           // Reset idle timer si geste détecté
           if (mode !== "IDLE") {
@@ -362,26 +437,123 @@ export default function AppV3Premium() {
 
     connectWebSocket();
 
-    // Listener pour toggle laser
-    const handleLaserToggle = (e) => {
-      touchLaser.isEnabled = e.detail.enabled;
-      console.log(`🔫 Laser Mode: ${e.detail.enabled ? 'ON' : 'OFF'}`);
+    // Système de mesure avec marqueurs fixes
+    let measureMarkers = {
+      point1: null,
+      point2: null,
+      line: null,
+      sphere1: null,
+      sphere2: null,
+      lastGestureState: { left: false, right: false }
     };
-    window.addEventListener("holo:laser:toggle", handleLaserToggle);
+    
+    const createMeasureSystem = () => {
+      // Ligne de mesure
+      const lineGeometry = new THREE.BufferGeometry();
+      const positions = new Float32Array([0, 0, 0, 1, 0, 0]);
+      lineGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      const lineMaterial = new THREE.LineBasicMaterial({ 
+        color: 0x00ff00, 
+        linewidth: 5,
+        transparent: true,
+        opacity: 0.9
+      });
+      measureMarkers.line = new THREE.Line(lineGeometry, lineMaterial);
+      measureMarkers.line.visible = false;
+      scene.add(measureMarkers.line);
+      
+      // Marqueur 1 (rouge)
+      const sphere1Geometry = new THREE.SphereGeometry(0.08, 16, 16);
+      const sphere1Material = new THREE.MeshStandardMaterial({ 
+        color: 0xff0000,
+        transparent: true,
+        opacity: 0.9,
+        emissive: 0xff0000,
+        emissiveIntensity: 0.5
+      });
+      measureMarkers.sphere1 = new THREE.Mesh(sphere1Geometry, sphere1Material);
+      measureMarkers.sphere1.visible = false;
+      scene.add(measureMarkers.sphere1);
+      
+      // Marqueur 2 (bleu)
+      const sphere2Geometry = new THREE.SphereGeometry(0.08, 16, 16);
+      const sphere2Material = new THREE.MeshStandardMaterial({ 
+        color: 0x0000ff,
+        transparent: true,
+        opacity: 0.9,
+        emissive: 0x0000ff,
+        emissiveIntensity: 0.5
+      });
+      measureMarkers.sphere2 = new THREE.Mesh(sphere2Geometry, sphere2Material);
+      measureMarkers.sphere2.visible = false;
+      scene.add(measureMarkers.sphere2);
+    };
+    createMeasureSystem();
+    
+    // Fonction pour placer un marqueur avec raycasting
+    const placeMarkerAtHand = (handPos, markerNumber) => {
+      // Convertir position main (0-1) en coordonn\u00e9es NDC (-1 \u00e0 1)
+      const x = handPos.x * 2 - 1;
+      const y = -(handPos.y * 2 - 1);
+      
+      // Raycaster
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
+      
+      // Intersection avec tous les meshes
+      const allMeshes = [];
+      root.traverse((obj) => {
+        if (obj.isMesh) allMeshes.push(obj);
+      });
+      
+      const intersects = raycaster.intersectObjects(allMeshes);
+      
+      if (intersects.length > 0) {
+        const point = intersects[0].point;
+        if (markerNumber === 1) {
+          measureMarkers.point1 = point.clone();
+          measureMarkers.sphere1.position.copy(point);
+          measureMarkers.sphere1.visible = true;
+          console.log('🔴 Marqueur 1 placé:', point);
+          window.dispatchEvent(new CustomEvent('measure:markers', { 
+            detail: { point1: true, point2: !!measureMarkers.point2 } 
+          }));
+        } else {
+          measureMarkers.point2 = point.clone();
+          measureMarkers.sphere2.position.copy(point);
+          measureMarkers.sphere2.visible = true;
+          console.log('🔵 Marqueur 2 placé:', point);
+          window.dispatchEvent(new CustomEvent('measure:markers', { 
+            detail: { point1: !!measureMarkers.point1, point2: true } 
+          }));
+        }
+        return true;
+      }
+      return false;
+    };
+    
+    // Fonction pour réinitialiser les marqueurs
+    const resetMarkers = () => {
+      measureMarkers.point1 = null;
+      measureMarkers.point2 = null;
+      measureMarkers.sphere1.visible = false;
+      measureMarkers.sphere2.visible = false;
+      measureMarkers.line.visible = false;
+      measureMarkers.lastGestureState = { left: false, right: false };
+      window.dispatchEvent(new CustomEvent('measure:update', { detail: { active: false } }));
+      window.dispatchEvent(new CustomEvent('measure:markers', { detail: { point1: false, point2: false } }));
+      console.log('🗑️ Marqueurs réinitialisés');
+    };
+    
+    // Touche ECHAP pour reset les marqueurs
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' || e.key === 'r' || e.key === 'R') {
+        resetMarkers();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
 
-    // Listener pour toggle slice
-    const handleSliceToggle = (e) => {
-      sliceManager.setEnabled(e.detail.enabled);
-      console.log(`🔪 Slice Mode: ${e.detail.enabled ? 'ON' : 'OFF'} [${sliceManager.mode}]`);
-    };
-    window.addEventListener("holo:slice:toggle", handleSliceToggle);
-
-    // Listener pour changer axe slice
-    const handleSliceAxis = (e) => {
-      sliceManager.setMode(e.detail.axis);
-      console.log(`🔪 Slice Axis: ${e.detail.axis}`);
-    };
-    window.addEventListener("holo:slice:axis", handleSliceAxis);
+    // Slice view supprimé (non souhaité)
 
     // Listeners pour Recorder
     const handleToggleRecording = () => {
@@ -523,8 +695,11 @@ export default function AppV3Premium() {
 
       const s = stateRef.current;
       
-      // IDLE Mode: Animation automatique
-      if (s.mode === "IDLE") {
+      // Ne pas freezer pendant la mesure (on peut bouger pour placer les marqueurs)
+      const isLocked = s.freeze;
+      
+      // IDLE Mode: Animation automatique (sauf si locked)
+      if (s.mode === "IDLE" && !isLocked) {
         s.idleTime += deltaTime;
         
         // Rotation automatique lente après 2s
@@ -533,17 +708,21 @@ export default function AppV3Premium() {
         }
       }
       
-      // Smoothing avec damp
-      s.rotX = THREE.MathUtils.damp(s.rotX, s.targetRotX, 5, deltaTime);
-      s.rotY = THREE.MathUtils.damp(s.rotY, s.targetRotY, 5, deltaTime);
-      s.distance = THREE.MathUtils.damp(s.distance, s.targetDistance, 5, deltaTime);
+      // Smoothing avec damp (seulement si pas locked)
+      if (!isLocked) {
+        s.rotX = THREE.MathUtils.damp(s.rotX, s.targetRotX, 5, deltaTime);
+        s.rotY = THREE.MathUtils.damp(s.rotY, s.targetRotY, 5, deltaTime);
+        s.distance = THREE.MathUtils.damp(s.distance, s.targetDistance, 5, deltaTime);
 
-      root.rotation.x = s.rotX;
-      root.rotation.y = s.rotY;
-      camera.position.z = s.distance;
+        root.rotation.x = s.rotX;
+        root.rotation.y = s.rotY;
+        camera.position.z = s.distance;
+      }
 
-      // EFFET 4: Flottement du modèle (lévitation) - Réduit pour moins de mouvement
-      root.position.y = 0.015 * Math.sin(elapsedTime * 1.0);  // 0.05→0.015 et vitesse réduite
+      // EFFET 4: Flottement du modèle (lévitation) - Désactivé si locked
+      if (!isLocked) {
+        root.position.y = 0.015 * Math.sin(elapsedTime * 1.0);
+      }
 
       // EFFET 5: Rotation des anneaux
       rings.forEach((ring, i) => {
@@ -554,6 +733,22 @@ export default function AppV3Premium() {
 
       // EFFET 6: Rotation lente des étoiles
       stars.rotation.y = elapsedTime * 0.02;
+      
+      // EFFET 7: Animer les particules flottantes (si créées)
+      if (floatingParticles) {
+        floatingParticles.rotation.y = elapsedTime * 0.05;
+        // Animation verticale des particules
+        const positions = floatingParticles.geometry.attributes.position;
+        for (let i = 0; i < positions.count; i++) {
+          const y = positions.getY(i);
+          positions.setY(i, y + 0.002);
+          // Reset si trop haut
+          if (y > 5) {
+            positions.setY(i, -5);
+          }
+        }
+        positions.needsUpdate = true;
+      }
 
       // EFFET 7: Pulsation halo
       halo.scale.setScalar(1.0 + 0.05 * Math.sin(elapsedTime * 2));
@@ -566,20 +761,8 @@ export default function AppV3Premium() {
         explode: s.explode
       });
 
-      // EFFET 9: Gradient volumétrique dynamique
-      volumetricGradient.update(s.mode, s.explode);
-
-      // EFFET 10: Touch-Laser (si activé)
-      if (touchLaser.isEnabled) {
-        // Utilise position souris (temporaire - sera remplacé par index main)
-        touchLaser.laser.setActive(true);
-        touchLaser.laser.update(mousePos, allMeshes, deltaTime);
-      } else {
-        touchLaser.laser.setActive(false);
-      }
-
-      // EFFET 11: Slice View (contrôle clavier)
-      sliceController.update();
+      // EFFET 9: Gradient volumétrique (déjà mis à jour plus bas avec volumetricFog)
+      // Touch-Laser et Slice View supprimés (non souhaités)
 
       // EFFET 12: Gesture Recorder
       if (gestureRecorder.isRecording) {
@@ -605,6 +788,68 @@ export default function AppV3Premium() {
 
       // Explosion : Utiliser le MultiSTL Manager (supporte STL et OBJ)
       multiSTL.applyExplosion(s.explode);
+      
+      // Système de mesure temporairement désactivé (en debug)
+      // TODO: Réactiver une fois que rotation/explode fonctionnent
+      /*
+      if (s.lastMessage && s.lastMessage.measure) {
+        const measure = s.lastMessage.measure;
+        
+        // Détection des mains avec geste 🤘
+        const hasLeftGesture = measure.has_left_gesture || false;
+        const hasRightGesture = measure.has_right_gesture || false;
+        
+        // Placer marqueur 1 si main gauche fait le geste (front montant)
+        if (hasLeftGesture && !measureMarkers.lastGestureState.left) {
+          if (measure.pos1) {
+            placeMarkerAtHand(measure.pos1, 1);
+          }
+        }
+        measureMarkers.lastGestureState.left = hasLeftGesture;
+        
+        // Placer marqueur 2 si main droite fait le geste (front montant)
+        if (hasRightGesture && !measureMarkers.lastGestureState.right) {
+          if (measure.pos2) {
+            placeMarkerAtHand(measure.pos2, 2);
+          }
+        }
+        measureMarkers.lastGestureState.right = hasRightGesture;
+      }
+      */
+      
+      // Afficher ligne et distance si 2 marqueurs placés
+      if (measureMarkers.point1 && measureMarkers.point2) {
+        // Ligne entre les 2 marqueurs
+        measureMarkers.line.visible = true;
+        const positions = measureMarkers.line.geometry.attributes.position;
+        positions.setXYZ(0, measureMarkers.point1.x, measureMarkers.point1.y, measureMarkers.point1.z);
+        positions.setXYZ(1, measureMarkers.point2.x, measureMarkers.point2.y, measureMarkers.point2.z);
+        positions.needsUpdate = true;
+        
+        // Animation pulsation des sphères
+        const pulse = Math.sin(elapsedTime * 3) * 0.1 + 1;
+        measureMarkers.sphere1.scale.setScalar(pulse);
+        measureMarkers.sphere2.scale.setScalar(pulse);
+        
+        // Calculer distance
+        const distance = measureMarkers.point1.distanceTo(measureMarkers.point2);
+        
+        // Émettre événement pour affichage
+        window.dispatchEvent(new CustomEvent('measure:update', { 
+          detail: { 
+            active: true, 
+            distance: distance 
+          } 
+        }));
+      } else {
+        measureMarkers.line.visible = false;
+        window.dispatchEvent(new CustomEvent('measure:update', { detail: { active: false } }));
+      }
+      
+      // Mettre à jour le fog volumétrique
+      if (volumetricFog) {
+        volumetricFog.material.uniforms.time.value = elapsedTime;
+      }
 
       // Render avec post-processing
       composer.render();
@@ -683,9 +928,10 @@ export default function AppV3Premium() {
       if (metricsInterval) clearInterval(metricsInterval);
       if (wsRef.current) wsRef.current.close();
       particleSystem.dispose();
-      touchLaser.dispose();
-      sliceManager.dispose();
-      sliceController.dispose();
+      if (measureMarkers.line) scene.remove(measureMarkers.line);
+      if (measureMarkers.sphere1) scene.remove(measureMarkers.sphere1);
+      if (measureMarkers.sphere2) scene.remove(measureMarkers.sphere2);
+      window.removeEventListener('keydown', handleKeyDown);
       gestureRecorder.dispose();
       multiSTL.dispose();
       
@@ -715,9 +961,6 @@ export default function AppV3Premium() {
       
       {/* Interface unifiée - Vue dégagée */}
       <HoloControlBar />
-      {/* GestureIndicator et GhostReticule désactivés pour vue claire du modèle */}
-      {/* <GestureIndicator /> */}
-      {/* <GhostReticule /> */}
       
       {/* HUD Détaillé (optionnel, peut être caché par défaut) */}
       {/* <GesturesHUD /> - Désactivé pour interface épurée */}
@@ -726,6 +969,9 @@ export default function AppV3Premium() {
       {/* Panels avancés */}
       <RecorderPanel />
       <ModelGallery />
+      
+      {/* Affichage mesure de distance */}
+      <MeasureDisplay />
     </>
   );
 }

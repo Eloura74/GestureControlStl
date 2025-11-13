@@ -148,10 +148,10 @@ class GestureProcessor:
         return distance < threshold, distance
     
     def is_fist_closed(self, landmarks):
-        """Détecte un poing fermé"""
+        """Détecte un poing fermé (TOUS les doigts fermés)"""
         pairs = [(8,6), (12,10), (16,14), (20,18)]
         extended = sum(landmarks[tip].y < landmarks[pip].y for tip, pip in pairs)
-        return extended <= 1
+        return extended == 0  # Aucun doigt levé = vrai poing fermé
     
     def is_hand_open(self, landmarks):
         """Détecte une main ouverte (tous les doigts étendus)"""
@@ -162,6 +162,13 @@ class GestureProcessor:
     def finger_extended(self, landmarks, tip, pip):
         """Vérifie si un doigt est levé"""
         return landmarks[tip].y < landmarks[pip].y
+    
+    def is_measure_gesture(self, landmarks):
+        """Détecte geste de mesure : index (8) + auriculaire (20) levés (🤘 rock sign)"""
+        index_up = self.finger_extended(landmarks, 8, 6)
+        pinky_up = self.finger_extended(landmarks, 20, 18)
+        # Version simplifiée : juste index + pinky levés suffit
+        return index_up and pinky_up
     
     def process_frame(self, hands_landmarks):
         """
@@ -195,6 +202,7 @@ class GestureProcessor:
         is_open_left = is_open_right = False
         is_pinch_left = is_pinch_right = False
         is_index_up = False
+        is_measure_left = is_measure_right = False
         
         if num_hands >= 1:
             is_fist = self.is_fist_closed(hands_landmarks[0])
@@ -203,20 +211,57 @@ class GestureProcessor:
             is_index_up = self.finger_extended(hands_landmarks[0], 8, 6)
             is_pinch_left, _ = self.is_pinching(hands_landmarks[0], 
                                                 gestures_cfg.get('pinch_threshold', 0.08))
+            is_measure_left = self.is_measure_gesture(hands_landmarks[0])
         
         if num_hands >= 2:
             is_fist_right = self.is_fist_closed(hands_landmarks[1])
             is_open_right = self.is_hand_open(hands_landmarks[1])
             is_pinch_right, _ = self.is_pinching(hands_landmarks[1],
                                                  gestures_cfg.get('pinch_threshold', 0.08))
+            is_measure_right = self.is_measure_gesture(hands_landmarks[1])
         
-        # Mise à jour FSM
+        # Système de mesure avec gestes indépendants par main
+        measure_data = {
+            "active": False,
+            "has_left_gesture": False,
+            "has_right_gesture": False,
+            "pos1": None,
+            "pos2": None
+        }
+        
+        # Vérifier chaque main indépendamment
+        if num_hands >= 1:
+            lm_left = hands_landmarks[0]
+            if is_measure_left:
+                # Position de la main gauche (milieu index-auriculaire)
+                index_l = np.array([lm_left[8].x, lm_left[8].y])
+                pinky_l = np.array([lm_left[20].x, lm_left[20].y])
+                measure_left_pos = (index_l + pinky_l) / 2.0
+                measure_data["has_left_gesture"] = True
+                measure_data["pos1"] = {"x": float(measure_left_pos[0]), "y": float(measure_left_pos[1])}
+        
+        if num_hands >= 2:
+            lm_right = hands_landmarks[1]
+            if is_measure_right:
+                # Position de la main droite (milieu index-auriculaire)
+                index_r = np.array([lm_right[8].x, lm_right[8].y])
+                pinky_r = np.array([lm_right[20].x, lm_right[20].y])
+                measure_right_pos = (index_r + pinky_r) / 2.0
+                measure_data["has_right_gesture"] = True
+                measure_data["pos2"] = {"x": float(measure_right_pos[0]), "y": float(measure_right_pos[1])}
+        
+        # Marquer comme actif si au moins une main fait le geste
+        measure_data["active"] = is_measure_left or is_measure_right
+        
+        # Mise à jour FSM (mesure désactivée temporairement)
+        is_measure = False  # is_measure_left and is_measure_right
         current_mode = self.fsm.update(
             hands_detected=num_hands,
             is_fist=is_fist,
             is_pinch_left=is_pinch_left,
             is_pinch_right=is_pinch_right,
-            is_index_up=is_index_up
+            is_index_up=is_index_up,
+            is_measure=is_measure
         )
         
         # Rotation (si mode ROTATE actif) - Utilise CENTRE PAUME pour mouvement intuitif
@@ -334,7 +379,8 @@ class GestureProcessor:
             "zoom_delta": round(zoom_delta, 6),
             "explode": round(self.explode_factor, 2),
             "mode": current_mode.name,
-            "freeze": current_mode == GestureMode.FREEZE
+            "freeze": current_mode == GestureMode.FREEZE,
+            "measure": measure_data
         }
 
 
@@ -406,6 +452,7 @@ async def camera_loop():
                         "freeze": gesture_data["freeze"],
                         "mode": gesture_data["mode"]
                     },
+                    "measure": gesture_data["measure"],
                     "dbg": {"hands": len(hands_lm), "frame": frame_idx}
                 }
                 

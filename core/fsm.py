@@ -12,7 +12,7 @@ class GestureMode(Enum):
     IDLE = auto()      # Aucun geste actif
     ROTATE = auto()    # Rotation du modèle (1 main)
     ZOOM = auto()      # Zoom (2 mains en pincement)
-    EXPLODE = auto()   # Explosion du modèle (index levé)
+    EXPLODE = auto()   # Explosion du modèle (2 mains écartées)
     FREEZE = auto()    # Gel temporaire (poing fermé)
 
 
@@ -23,9 +23,11 @@ class GestureFSM:
     Priorités (du plus haut au plus bas):
     1. FREEZE (poing fermé - bloque tout)
     2. ZOOM (2 mains en pincement)
-    3. ROTATE (1 main)
-    4. EXPLODE (index levé)
+    3. EXPLODE (2 mains écartées)
+    4. ROTATE (1 main)
     5. IDLE (aucun geste)
+    
+    Note: LASER est géré en parallèle côté frontend (pas dans la FSM)
     
     Hystérésis temporel : un geste doit être maintenu un certain temps
     avant de déclencher la transition (évite les faux positifs)
@@ -91,7 +93,7 @@ class GestureFSM:
         return self._time_in_current_mode() >= dwell_required
     
     def update(self, hands_detected, is_fist, is_pinch_left, is_pinch_right, 
-               is_index_up, force_idle=False):
+               is_index_up, is_measure=False, force_idle=False):
         """
         Met à jour la FSM selon les gestes détectés
         
@@ -101,6 +103,7 @@ class GestureFSM:
             is_pinch_left: True si main gauche en pincement
             is_pinch_right: True si main droite en pincement
             is_index_up: True si index levé
+            is_measure: True si geste de mesure actif (bloque EXPLODE)
             force_idle: Force le retour en IDLE (pour reset)
             
         Returns:
@@ -110,7 +113,7 @@ class GestureFSM:
             self._enter_mode(GestureMode.IDLE)
             return self.mode
         
-        # Priorité 1 : FREEZE (bloque tout)
+        # Priorité 1 : FREEZE (poing fermé - bloque tout)
         if is_fist:
             if self._can_transition(GestureMode.FREEZE):
                 self._enter_mode(GestureMode.FREEZE)
@@ -122,16 +125,16 @@ class GestureFSM:
                 self._enter_mode(GestureMode.ZOOM)
             return self.mode
         
-        # Priorité 3 : ROTATE (1 main)
+        # Priorité 3 : EXPLODE (2 mains écartées - pas pincement, pas mesure)
+        if hands_detected >= 2 and not (is_pinch_left or is_pinch_right) and not is_measure:
+            if self._can_transition(GestureMode.EXPLODE):
+                self._enter_mode(GestureMode.EXPLODE)
+            return self.mode
+        
+        # Priorité 4 : ROTATE (1 main ouverte)
         if hands_detected == 1:
             if self._can_transition(GestureMode.ROTATE):
                 self._enter_mode(GestureMode.ROTATE)
-            return self.mode
-        
-        # Priorité 4 : EXPLODE (index levé)
-        if is_index_up:
-            if self._can_transition(GestureMode.EXPLODE):
-                self._enter_mode(GestureMode.EXPLODE)
             return self.mode
         
         # Par défaut : retour IDLE après temps de maintien
