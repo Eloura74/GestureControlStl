@@ -203,13 +203,22 @@ export default function AppV3Premium() {
     
     // Ajouter des modèles STL à la galerie
     multiSTL.addModel("/models/Frame_Bolt.stl", "Frame Bolt");
-    // Ajouter d'autres modèles si disponibles
-    // multiSTL.addModel("/models/autre_modele.stl", "Autre Modèle");
+    multiSTL.addModel("/models/roller_bearing.stl", "Roller Bearing");
 
-    // Charger le premier modèle via MultiSTL
+    // Charger tous les modèles au démarrage
     (async () => {
       try {
-        await multiSTL.loadModel(0);
+        console.log("📥 Chargement de tous les modèles...");
+        
+        // Charger tous les modèles en parallèle
+        await Promise.all([
+          multiSTL.loadModel(0),
+          multiSTL.loadModel(1)
+        ]);
+        
+        console.log("✅ Tous les modèles chargés");
+        
+        // Afficher le premier
         await multiSTL.switchToModel(0);
         
         // Ajouter mesh au tableau pour laser
@@ -227,7 +236,7 @@ export default function AppV3Premium() {
           }
         }
       } catch (err) {
-        console.error("❌ Erreur chargement modèle initial:", err);
+        console.error("❌ Erreur chargement modèles:", err);
       }
     })();
 

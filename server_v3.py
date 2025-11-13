@@ -153,6 +153,12 @@ class GestureProcessor:
         extended = sum(landmarks[tip].y < landmarks[pip].y for tip, pip in pairs)
         return extended <= 1
     
+    def is_hand_open(self, landmarks):
+        """Détecte une main ouverte (tous les doigts étendus)"""
+        pairs = [(8,6), (12,10), (16,14), (20,18)]  # Index, Majeur, Annulaire, Auriculaire
+        extended = sum(landmarks[tip].y < landmarks[pip].y for tip, pip in pairs)
+        return extended >= 3  # Au moins 3 doigts étendus
+    
     def finger_extended(self, landmarks, tip, pip):
         """Vérifie si un doigt est levé"""
         return landmarks[tip].y < landmarks[pip].y
@@ -185,16 +191,22 @@ class GestureProcessor:
         
         # Détection des gestes élémentaires
         is_fist = False
+        is_fist_left = is_fist_right = False
+        is_open_left = is_open_right = False
         is_pinch_left = is_pinch_right = False
         is_index_up = False
         
         if num_hands >= 1:
             is_fist = self.is_fist_closed(hands_landmarks[0])
+            is_fist_left = is_fist
+            is_open_left = self.is_hand_open(hands_landmarks[0])
             is_index_up = self.finger_extended(hands_landmarks[0], 8, 6)
             is_pinch_left, _ = self.is_pinching(hands_landmarks[0], 
                                                 gestures_cfg.get('pinch_threshold', 0.08))
         
         if num_hands >= 2:
+            is_fist_right = self.is_fist_closed(hands_landmarks[1])
+            is_open_right = self.is_hand_open(hands_landmarks[1])
             is_pinch_right, _ = self.is_pinching(hands_landmarks[1],
                                                  gestures_cfg.get('pinch_threshold', 0.08))
         
@@ -274,10 +286,31 @@ class GestureProcessor:
         else:
             self.moving_avg_dist = None
         
-        # Explosion (si mode EXPLODE actif)
-        if self.fsm.can_apply_gesture("explode") and is_index_up:
-            self.explode_factor = float(np.clip(self.explode_factor + EXP_GAIN, 0.0, 1.0))
+        # Explosion NOUVELLE MÉTHODE : poing + main ouverte
+        # Distance entre les 2 mains = facteur d'explosion
+        if num_hands >= 2:
+            # Détecter : une main poing + une main ouverte
+            is_explode_gesture = (is_fist_left and is_open_right) or (is_open_left and is_fist_right)
+            
+            if is_explode_gesture:
+                # Calculer distance entre centres des mains (landmark 9 = centre paume)
+                center_left = np.array([hands_landmarks[0][9].x, hands_landmarks[0][9].y])
+                center_right = np.array([hands_landmarks[1][9].x, hands_landmarks[1][9].y])
+                distance = np.linalg.norm(center_right - center_left)
+                
+                # Mapper distance (0.1 à 0.8) vers facteur explosion (0.0 à 1.0)
+                # Distance petite = peu d'écart, distance grande = beaucoup d'écart
+                min_dist = 0.1  # Mains proches
+                max_dist = 0.8  # Mains écartées
+                
+                # Normaliser et clamper
+                normalized = (distance - min_dist) / (max_dist - min_dist)
+                self.explode_factor = float(np.clip(normalized, 0.0, 1.0))
+            else:
+                # Pas de geste explosion, retour progressif à 0
+                self.explode_factor = float(np.clip(self.explode_factor - EXP_GAIN, 0.0, 1.0))
         else:
+            # Moins de 2 mains, retour à 0
             self.explode_factor = float(np.clip(self.explode_factor - EXP_GAIN, 0.0, 1.0))
         
         # Logs périodiques
