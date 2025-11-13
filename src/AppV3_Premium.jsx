@@ -22,9 +22,12 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass';
 import GesturesHUD from "./components/GesturesHUDV2";
 import WebcamPiP from "./components/WebcamPiP";
-import ProfileSelector from "./components/ProfileSelector";
-import StateBadge from "./components/StateBadge";
-import StopButton from "./components/StopButton";
+import HoloControlBar from "./components/HoloControlBar";
+import GestureIndicator from "./components/GestureIndicator";
+import GhostReticule from "./components/GhostReticule";
+import { autoFitMesh, createEnhancedHolographicShader } from "./three/utils";
+import { DirectionalParticleSystem, VolumetricGradient } from "./three/ParticleSystem";
+import { TouchLaserManager } from "./three/LaserPointer";
 
 const WS_URL = "ws://127.0.0.1:8765/ws";
 const RECONNECT_DELAYS = [500, 1000, 2000, 5000, 5000];
@@ -154,11 +157,21 @@ export default function AppV3Premium() {
     }));
     scene.add(stars);
 
-    // Matériau holographique PREMIUM
-    const wireframeMaterial = createPremiumHolographicMaterial();
+    // EFFET 4: Particules directionnelles réactives
+    const particleSystem = new DirectionalParticleSystem(scene, 500);
+    
+    // EFFET 5: Gradient volumétrique dynamique
+    const volumetricGradient = new VolumetricGradient(scene);
+
+    // EFFET 6: Touch-Laser Mode
+    const touchLaser = new TouchLaserManager(scene, camera);
+    const allMeshes = []; // Tableau pour stocker les meshes à tester
+
+    // Matériau holographique PREMIUM (avec effets avancés)
+    const wireframeMaterial = createEnhancedHolographicShader();
     const materialRef = { current: wireframeMaterial };
 
-    // Loader STL
+    // Loader STL avec auto-fit
     const loader = new STLLoader();
     loader.load(
       "/models/Frame_Bolt.stl",
@@ -169,6 +182,18 @@ export default function AppV3Premium() {
         const mesh = new THREE.Mesh(geo, wireframeMaterial);
         mesh.scale.set(0.02, 0.02, 0.02);
         root.add(mesh);
+        
+        // Ajouter au tableau pour laser raycasting
+        allMeshes.push(mesh);
+        
+        // Auto-fit du modèle dans la caméra
+        const fitData = autoFitMesh(mesh, camera);
+        if (fitData) {
+          stateRef.current.distance = fitData.optimalDistance;
+          stateRef.current.targetDistance = fitData.optimalDistance;
+          camera.position.z = fitData.optimalDistance;
+          console.log("✅ Auto-fit appliqué");
+        }
         
         // Explosion: store vertices
         const positions = geo.attributes.position.array;
@@ -205,6 +230,11 @@ export default function AppV3Premium() {
         console.log("✅ [WS V3 PREMIUM] Connecté");
         setWsStatus("connected");
         reconnectAttempt.current = 0;
+        
+        // Emit event pour HoloControlBar
+        window.dispatchEvent(new CustomEvent("holo:ws:status", {
+          detail: { status: "connected" }
+        }));
         
         if (heartbeatInterval.current) clearInterval(heartbeatInterval.current);
         heartbeatInterval.current = setInterval(() => {
@@ -268,11 +298,19 @@ export default function AppV3Premium() {
       ws.onerror = (err) => {
         console.error("❌ [WS] Erreur:", err);
         setWsStatus("error");
+        
+        window.dispatchEvent(new CustomEvent("holo:ws:status", {
+          detail: { status: "error" }
+        }));
       };
 
       ws.onclose = () => {
         console.warn("⚠️  [WS] Connexion fermée");
         setWsStatus("disconnected");
+        
+        window.dispatchEvent(new CustomEvent("holo:ws:status", {
+          detail: { status: "disconnected" }
+        }));
         
         if (heartbeatInterval.current) {
           clearInterval(heartbeatInterval.current);
@@ -297,6 +335,21 @@ export default function AppV3Premium() {
 
     connectWebSocket();
 
+    // Listener pour toggle laser
+    const handleLaserToggle = (e) => {
+      touchLaser.isEnabled = e.detail.enabled;
+      console.log(`🔫 Laser Mode: ${e.detail.enabled ? 'ON' : 'OFF'}`);
+    };
+    window.addEventListener("holo:laser:toggle", handleLaserToggle);
+
+    // Position souris pour contrôle laser (temporaire)
+    const mousePos = { x: 0.5, y: 0.5 };
+    const handleMouseMove = (e) => {
+      mousePos.x = e.clientX / window.innerWidth;
+      mousePos.y = e.clientY / window.innerHeight;
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+
     // Animation loop PREMIUM
     const clock = new THREE.Clock();
     function animate() {
@@ -313,6 +366,16 @@ export default function AppV3Premium() {
           materialRef.current.uniforms.scanPhase.value = (elapsedTime % 3.0) / 3.0;
         } else {
           materialRef.current.uniforms.scanPhase.value = -1.0; // Désactivé
+        }
+        
+        // Glitch aléatoire occasionnel
+        if (Math.random() > 0.98) {
+          materialRef.current.uniforms.glitchAmount.value = 1.0;
+          setTimeout(() => {
+            if (materialRef.current?.uniforms) {
+              materialRef.current.uniforms.glitchAmount.value = 0.0;
+            }
+          }, 100);
         }
       }
 
@@ -352,6 +415,26 @@ export default function AppV3Premium() {
 
       // EFFET 7: Pulsation halo
       halo.scale.setScalar(1.0 + 0.05 * Math.sin(elapsedTime * 2));
+
+      // EFFET 8: Mise à jour particules directionnelles
+      particleSystem.update(deltaTime, s.mode, {
+        rotX: s.rotX,
+        rotY: s.rotY,
+        zoom: s.targetDistance - s.distance,
+        explode: s.explode
+      });
+
+      // EFFET 9: Gradient volumétrique dynamique
+      volumetricGradient.update(s.mode, s.explode);
+
+      // EFFET 10: Touch-Laser (si activé)
+      if (touchLaser.isEnabled) {
+        // Utilise position souris (temporaire - sera remplacé par index main)
+        touchLaser.laser.setActive(true);
+        touchLaser.laser.update(mousePos, allMeshes, deltaTime);
+      } else {
+        touchLaser.laser.setActive(false);
+      }
 
       // Explosion
       root.traverse((obj) => {
@@ -408,10 +491,14 @@ export default function AppV3Premium() {
     return () => {
       window.removeEventListener("resize", handleResize);
       window.removeEventListener("keypress", handleKeyPress);
+      window.removeEventListener("holo:laser:toggle", handleLaserToggle);
+      window.removeEventListener("mousemove", handleMouseMove);
       if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
       if (heartbeatInterval.current) clearInterval(heartbeatInterval.current);
       if (metricsInterval) clearInterval(metricsInterval);
       if (wsRef.current) wsRef.current.close();
+      particleSystem.dispose();
+      touchLaser.dispose();
       mountRef.current?.removeChild(renderer.domElement);
     };
   }, []);
@@ -419,39 +506,16 @@ export default function AppV3Premium() {
   return (
     <>
       <div ref={mountRef} />
-      <StopButton />
+      
+      {/* Interface unifiée - Vue dégagée */}
+      <HoloControlBar />
+      {/* GestureIndicator et GhostReticule désactivés pour vue claire du modèle */}
+      {/* <GestureIndicator /> */}
+      {/* <GhostReticule /> */}
+      
+      {/* HUD Détaillé (optionnel, peut être caché par défaut) */}
       <GesturesHUD />
       <WebcamPiP />
-      <ProfileSelector />
-      <StateBadge mode={currentMode} />
-      
-      {/* Metrics Display V3 PREMIUM */}
-      <div style={{
-        position: "fixed",
-        top: "10px",
-        right: "10px",
-        background: "rgba(0,0,0,0.7)",
-        backdropFilter: "blur(20px) saturate(180%)",
-        color: "#0ff",
-        padding: "8px 12px",
-        borderRadius: "4px",
-        fontFamily: "monospace",
-        fontSize: "11px",
-        border: "1px solid rgba(0,255,200,0.5)",
-        boxShadow: "0 0 20px rgba(0,255,200,0.2)",
-        display: "flex",
-        gap: "12px"
-      }}>
-        <div>🎯 FPS: {metrics.fps.toFixed(1)}</div>
-        <div>⚡ {metrics.latency.toFixed(1)}ms</div>
-        <div style={{ 
-          color: wsStatus === "connected" ? "#0f0" : 
-                 wsStatus === "connecting" ? "#ff0" : "#f00",
-          textShadow: "0 0 10px currentColor"
-        }}>
-          ● V3 PREMIUM
-        </div>
-      </div>
     </>
   );
 }

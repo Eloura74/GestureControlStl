@@ -1,0 +1,198 @@
+/**
+ * GHOST RETICULE STYLES
+ * Réticule holographique 3D animé
+ */
+
+.ghost-reticule {
+  position: fixed;
+  width: 80px;
+  height: 80px;
+  transform: translate(-50%, -50%);
+  
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+  z-index: 400;
+}
+
+.ghost-reticule.visible {
+  opacity: 1;
+}
+
+/* Centre du réticule */
+.reticule-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  
+  width: 8px;
+  height: 8px;
+  
+  background: currentColor;
+  border-radius: 50%;
+  
+  box-shadow: 
+    0 0 20px currentColor,
+    0 0 40px currentColor;
+}
+
+/* Anneaux concentriques */
+.reticule-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  
+  opacity: 0.6;
+}
+
+.ring-1 {
+  width: 40px;
+  height: 40px;
+  animation: ringPulse 1.5s ease-in-out infinite;
+}
+
+.ring-2 {
+  width: 60px;
+  height: 60px;
+  animation: ringPulse 1.5s ease-in-out infinite 0.3s;
+}
+
+@keyframes ringPulse {
+  0%, 100% {
+    opacity: 0.6;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    opacity: 0.3;
+    transform: translate(-50%, -50%) scale(1.1);
+  }
+}
+
+/* Lignes de visée */
+.reticule-line {
+  position: absolute;
+  background: currentColor;
+  opacity: 0.7;
+}
+
+.line-top {
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 15px;
+}
+
+.line-bottom {
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 15px;
+}
+
+.line-left {
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 15px;
+  height: 2px;
+}
+
+.line-right {
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 15px;
+  height: 2px;
+}
+
+/* Animations par mode */
+@keyframes reticuleRotate {
+  0% {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+  100% {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+@keyframes reticuleZoom {
+  0%, 100% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.3);
+  }
+}
+
+@keyframes reticuleExplode {
+  0%, 100% {
+    transform: translate(-50%, -50%) scale(1);
+    filter: blur(0px);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.5);
+    filter: blur(3px);
+  }
+}
+
+/* Effet de particules pour EXPLODE */
+.ghost-reticule[style*="animation: reticuleExplode"]::before,
+.ghost-reticule[style*="animation: reticuleExplode"]::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  background: currentColor;
+  border-radius: 50%;
+  animation: particles 0.8s ease-out infinite;
+}
+
+.ghost-reticule[style*="animation: reticuleExplode"]::after {
+  animation-delay: 0.4s;
+}
+
+@keyframes particles {
+  0% {
+    transform: translate(-50%, -50%) translate(0, 0);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) translate(40px, -40px);
+    opacity: 0;
+  }
+}
+
+/* Trail effect pour ROTATE */
+.ghost-reticule[style*="reticuleRotate"]::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  height: 100%;
+  border: 2px dashed currentColor;
+  border-radius: 50%;
+  opacity: 0.3;
+  animation: trailRotate 2s linear infinite reverse;
+}
+
+@keyframes trailRotate {
+  0% {
+    transform: translate(-50%, -50%) rotate(0deg) scale(1);
+    opacity: 0.3;
+  }
+  100% {
+    transform: translate(-50%, -50%) rotate(-360deg) scale(1.2);
+    opacity: 0;
+  }
+}

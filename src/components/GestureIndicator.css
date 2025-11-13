@@ -1,0 +1,202 @@
+/**
+ * GESTURE INDICATOR STYLES
+ * Indicateur central holographique animé
+ */
+
+.gesture-indicator {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  z-index: 500;
+}
+
+.gesture-indicator.visible {
+  opacity: 1;
+  animation: gestureAppear 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes gestureAppear {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.5);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+/* Icône centrale */
+.gesture-icon {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  
+  font-size: 60px;
+  color: var(--gesture-color, #00ffcc);
+  
+  background: radial-gradient(
+    circle at center,
+    rgba(0, 255, 200, 0.15) 0%,
+    rgba(0, 255, 200, 0.05) 50%,
+    transparent 70%
+  );
+  
+  border: 2px solid var(--gesture-color, #00ffcc);
+  border-radius: 50%;
+  
+  box-shadow: 
+    0 0 40px var(--gesture-color, #00ffcc),
+    inset 0 0 30px rgba(0, 255, 200, 0.2);
+  
+  animation: iconPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes iconPulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 
+      0 0 40px var(--gesture-color, #00ffcc),
+      inset 0 0 30px rgba(0, 255, 200, 0.2);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 
+      0 0 60px var(--gesture-color, #00ffcc),
+      inset 0 0 40px rgba(0, 255, 200, 0.3);
+  }
+}
+
+/* Anneau rotatif */
+.gesture-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  
+  width: 140px;
+  height: 140px;
+  
+  border: 3px solid transparent;
+  border-top-color: var(--gesture-color, #00ffcc);
+  border-right-color: var(--gesture-color, #00ffcc);
+  border-radius: 50%;
+  
+  opacity: 0.6;
+  animation: ringRotate 2s linear infinite;
+}
+
+@keyframes ringRotate {
+  0% {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+  100% {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+/* Label du geste */
+.gesture-label {
+  font-family: 'Segoe UI', 'Roboto', monospace;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  
+  color: var(--gesture-color, #00ffcc);
+  text-shadow: 
+    0 0 20px var(--gesture-color, #00ffcc),
+    0 0 40px var(--gesture-color, #00ffcc);
+  
+  animation: labelGlow 2s ease-in-out infinite;
+}
+
+@keyframes labelGlow {
+  0%, 100% {
+    opacity: 1;
+    text-shadow: 
+      0 0 20px var(--gesture-color, #00ffcc),
+      0 0 40px var(--gesture-color, #00ffcc);
+  }
+  50% {
+    opacity: 0.8;
+    text-shadow: 
+      0 0 30px var(--gesture-color, #00ffcc),
+      0 0 60px var(--gesture-color, #00ffcc);
+  }
+}
+
+/* Variations par mode */
+.gesture-indicator[style*="--gesture-color: #00ff88"] .gesture-icon {
+  animation: iconPulse 1.5s ease-in-out infinite, rotateMode 3s linear infinite;
+}
+
+@keyframes rotateMode {
+  0% { transform: scale(1) rotate(0deg); }
+  50% { transform: scale(1.05) rotate(180deg); }
+  100% { transform: scale(1) rotate(360deg); }
+}
+
+.gesture-indicator[style*="--gesture-color: #00aaff"] .gesture-icon {
+  animation: iconPulse 1.5s ease-in-out infinite, zoomMode 1s ease-in-out infinite;
+}
+
+@keyframes zoomMode {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+.gesture-indicator[style*="--gesture-color: #ff6600"] .gesture-icon {
+  animation: iconPulse 0.5s ease-in-out infinite, explodeMode 0.8s ease-in-out infinite;
+}
+
+@keyframes explodeMode {
+  0%, 100% { 
+    transform: scale(1); 
+    filter: blur(0px);
+  }
+  50% { 
+    transform: scale(1.2); 
+    filter: blur(2px);
+  }
+}
+
+.gesture-indicator[style*="--gesture-color: #ffaa00"] .gesture-ring {
+  animation: none;
+  opacity: 1;
+  border-color: var(--gesture-color);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .gesture-icon {
+    width: 100px;
+    height: 100px;
+    font-size: 50px;
+  }
+  
+  .gesture-ring {
+    width: 120px;
+    height: 120px;
+  }
+  
+  .gesture-label {
+    font-size: 14px;
+    letter-spacing: 2px;
+  }
+}

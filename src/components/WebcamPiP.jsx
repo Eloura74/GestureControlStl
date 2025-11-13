@@ -16,6 +16,15 @@ export default function WebcamPiP() {
     return () => window.removeEventListener("holo:hud", handler);
   }, []);
 
+  // Écouter les événements de toggle depuis HoloControlBar
+  useEffect(() => {
+    const toggleHandler = (e) => {
+      setVisible(e.detail.visible);
+    };
+    window.addEventListener("holo:webcam:toggle", toggleHandler);
+    return () => window.removeEventListener("holo:webcam:toggle", toggleHandler);
+  }, []);
+
   const toggleVisible = () => {
     setVisible((prev) => !prev);
   };
