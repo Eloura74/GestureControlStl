@@ -392,7 +392,7 @@ export class RecorderUIController {
         case 'n': // Record
           this.toggleRecording();
           break;
-        case 'p': // Play
+        case 'l': // Lecture (Play) - Changé de P à L pour éviter conflit Performance Monitor
           this.togglePlayback();
           break;
         case 'space': // Pause (si en playback)
@@ -401,7 +401,7 @@ export class RecorderUIController {
             e.preventDefault();
           }
           break;
-        case 'm': // Stop
+        case 'k': // Stop (changé de M à K car M = menu modèles)
           if (this.recorder.isRecording) {
             this.recorder.stopRecording();
           } else if (this.recorder.isPlaying) {

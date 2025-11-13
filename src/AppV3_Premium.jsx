@@ -28,10 +28,13 @@ import { DirectionalParticleSystem, VolumetricGradient } from "./three/ParticleS
 import { PulseWaves, HandHalo, FreezeEffect, SpectacleMode } from "./three/VisualEffects";
 import { GestureRecorder, RecorderUIController } from "./three/GestureRecorder";
 import { MultiSTLManager, STLGalleryController } from "./three/MultiSTLManager";
+import { RadialMenu } from "./three/RadialMenu";
 import RecorderPanel from "./components/RecorderPanel";
 import ModelGallery from "./components/ModelGallery";
 import MeasureDisplay from "./components/MeasureDisplay";
 import PerformanceMonitor from "./components/PerformanceMonitor";
+import ModelAnalyzer from "./components/ModelAnalyzer";
+import RadialMenuButton from "./components/RadialMenuButton";
 
 const WS_URL = "ws://127.0.0.1:8765/ws";
 const RECONNECT_DELAYS = [500, 1000, 2000, 5000, 5000];
@@ -46,6 +49,16 @@ export default function AppV3Premium() {
   const [wsStatus, setWsStatus] = useState("connecting");
   const [currentMode, setCurrentMode] = useState("IDLE");
   const [metrics, setMetrics] = useState({ fps: 0, latency: 0 });
+  const [analyzeMode, setAnalyzeMode] = useState(false);
+  const [analyzeMaterial, setAnalyzeMaterial] = useState('acier');
+  const [radialMenuOpen, setRadialMenuOpen] = useState(false);
+  
+  const modelRef = useRef(null);
+  const materialRef = useRef(null);
+  const wireframeMaterial = useRef(null);
+  const multiSTLRef = useRef(null);
+  const gestureRecorderRef = useRef(null);
+  const radialMenuRef = useRef(null);
   
   const stateRef = useRef({
     rotX: 0, rotY: 0,
@@ -55,8 +68,14 @@ export default function AppV3Premium() {
     mode: "IDLE",
     freeze: false,
     lastMessage: null,
-    idleTime: 0
+    idleTime: 0,
+    radialMenuOpen: false
   });
+
+  // Synchroniser le state React avec le ref pour éviter closure dans animate()
+  useEffect(() => {
+    stateRef.current.radialMenuOpen = radialMenuOpen;
+  }, [radialMenuOpen]);
 
   useEffect(() => {
     // Nettoyer tout canvas orphelin au démarrage
@@ -245,11 +264,12 @@ export default function AppV3Premium() {
     const allMeshes = [];
 
     // Matériau holographique PREMIUM (avec effets avancés)
-    const wireframeMaterial = createEnhancedHolographicShader();
-    const materialRef = { current: wireframeMaterial };
+    wireframeMaterial.current = createEnhancedHolographicShader();
+    materialRef.current = wireframeMaterial.current;
 
     // EFFET 8: Gesture Recorder
     const gestureRecorder = new GestureRecorder();
+    gestureRecorderRef.current = gestureRecorder;
     const recorderUI = new RecorderUIController(gestureRecorder);
     const cleanupHotkeys = recorderUI.setupHotkeys();
 
@@ -262,7 +282,8 @@ export default function AppV3Premium() {
       }
     };
     
-    const multiSTL = new MultiSTLManager(scene, root, wireframeMaterial, camera, autoFitFunc);
+    const multiSTL = new MultiSTLManager(scene, root, wireframeMaterial.current, camera, autoFitFunc);
+    multiSTLRef.current = multiSTL;
     const galleryController = new STLGalleryController(multiSTL);
     
     // Ajouter des modèles STL à la galerie
@@ -354,7 +375,7 @@ export default function AppV3Premium() {
           const { g, dbg, preview } = msg;
           if (!g) return; // Pas de données gestes
           
-          const { rot, zoom, explode, freeze, mode } = g;
+          const { rot, zoom, explode, freeze, mode, gestures } = g;
 
           const s = stateRef.current;
           s.targetRotY += rot.dx;
@@ -367,6 +388,39 @@ export default function AppV3Premium() {
           s.mode = mode;
           s.lastMessage = msg;
           
+          // Gestes avancés (Phase 2)
+          if (gestures) {
+            // V-sign: Reset caméra + auto-fit
+            if (gestures.v_sign && !s.vSignCooldown) {
+              console.log('✌️ V-sign détecté - Reset caméra');
+              s.targetRotX = 0;
+              s.targetRotY = 0;
+              // Auto-fit sera appliqué dans animate()
+              s.needsAutoFit = true;
+              s.vSignCooldown = Date.now();
+            }
+            
+            // Cooldown 2s pour V-sign
+            if (s.vSignCooldown && Date.now() - s.vSignCooldown > 2000) {
+              s.vSignCooldown = null;
+            }
+            
+            // Thumbs up: Toggle explosion
+            if (gestures.thumbs_up && !s.thumbsUpCooldown) {
+              console.log('👍 Thumbs up - Toggle explosion');
+              s.explode = s.explode > 0.5 ? 0 : 1;
+              s.thumbsUpCooldown = Date.now();
+            }
+            
+            // Cooldown 2s pour thumbs up
+            if (s.thumbsUpCooldown && Date.now() - s.thumbsUpCooldown > 2000) {
+              s.thumbsUpCooldown = null;
+            }
+            
+            // Menu radial désormais contrôlé par bouton UI
+            // (Le geste 2 mains ne marche pas de manière fiable)
+          }
+          
           // Émettre event pour PerformanceMonitor
           window.dispatchEvent(new CustomEvent('ws:message', { detail: msg }));
           
@@ -375,13 +429,13 @@ export default function AppV3Premium() {
           s.freeze = isLocked;
           
           // HOLO-LOCK : Si mode FREEZE, changer la couleur du shader
-          if (isLocked && wireframeMaterial.uniforms) {
+          if (isLocked && wireframeMaterial.current?.uniforms) {
             // Shader devient vert quand locked
-            if (!wireframeMaterial.userData.originalColor) {
-              wireframeMaterial.userData.originalColor = true;
+            if (!wireframeMaterial.current.userData.originalColor) {
+              wireframeMaterial.current.userData.originalColor = true;
             }
-          } else if (wireframeMaterial.userData.originalColor) {
-            wireframeMaterial.userData.originalColor = false;
+          } else if (wireframeMaterial.current?.userData.originalColor) {
+            wireframeMaterial.current.userData.originalColor = false;
           }
 
           // Reset idle timer si geste détecté
@@ -507,6 +561,8 @@ export default function AppV3Premium() {
     const handHalo = new HandHalo(scene, camera);
     const freezeEffect = new FreezeEffect(scene);
     const spectacleMode = new SpectacleMode();
+    const radialMenu = new RadialMenu(scene, camera);
+    radialMenuRef.current = radialMenu;
     let lastMode = 'IDLE';
     
     // Fonction pour placer un marqueur avec raycasting
@@ -739,6 +795,67 @@ export default function AppV3Premium() {
       // Effet freeze
       freezeEffect.setActive(isLocked, elapsedTime);
       
+      // Menu radial update - Contrôlé par bouton UI
+      // Show/hide basé sur l'état radialMenuOpen
+      // IMPORTANT: Utiliser radialMenuRef.current et non radialMenu (closure)
+      const radialMenuInstance = radialMenuRef.current;
+      if (radialMenuInstance) {
+        // Vérifier l'état du bouton (stateRef pour éviter closure)
+        const shouldBeOpen = stateRef.current.radialMenuOpen;
+        
+        if (shouldBeOpen && !radialMenuInstance.visible) {
+          radialMenuInstance.show();
+          console.log('🎯 Menu radial ouvert');
+        } else if (!shouldBeOpen && radialMenuInstance.visible) {
+          radialMenuInstance.hide();
+        }
+        
+        const pointerInfo = (s.lastMessage && s.lastMessage.g && s.lastMessage.g.gestures) 
+          ? s.lastMessage.g.gestures.pointer 
+          : null;
+        const menuAction = radialMenuInstance.update(deltaTime, pointerInfo);
+        
+        if (menuAction) {
+          console.log('🎯 Action menu:', menuAction);
+          stateRef.current.radialMenuOpen = false; // Fermer après action
+          
+          // Traiter l'action du menu
+          if (menuAction === 'reset') {
+            s.targetRotX = 0;
+            s.targetRotY = 0;
+            s.needsAutoFit = true;
+          } else if (menuAction.startsWith('model_')) {
+            const modelIndex = parseInt(menuAction.split('_')[1]);
+            if (multiSTLRef.current) {
+              multiSTLRef.current.switchToModel(modelIndex);
+            }
+          } else if (menuAction === 'explode') {
+            s.explode = s.explode > 0.5 ? 0 : 1;
+          } else if (menuAction === 'freeze') {
+            s.freeze = !s.freeze;
+          } else if (menuAction === 'analyze') {
+            console.log('📊 Mode analyse activé');
+            setAnalyzeMode(!analyzeMode);
+          } else if (menuAction === 'record') {
+            const recorder = gestureRecorderRef.current;
+            if (recorder) {
+              if (recorder.isRecording) {
+                recorder.stopRecording();
+              } else {
+                recorder.startRecording();
+              }
+            }
+          }
+        }
+      }
+      
+      // Auto-fit si demandé (V-sign ou menu)
+      const currentModel = multiSTLRef.current?.getCurrentModel();
+      if (s.needsAutoFit && currentModel) {
+        autoFitMesh(currentModel, camera, s);
+        s.needsAutoFit = false;
+      }
+      
       // IDLE Mode: Animation automatique + Mode spectacle
       if (s.mode === 'IDLE' && !isLocked) {
         s.idleTime += deltaTime;
@@ -951,6 +1068,14 @@ export default function AppV3Premium() {
         case "e":
           s.explode = s.explode > 0.5 ? 0 : 1;
           break;
+        case "a":
+          setAnalyzeMode(!analyzeMode);
+          console.log('📊 Mode analyse:', !analyzeMode ? 'ON' : 'OFF');
+          break;
+        case "m":
+          // Toggle menu radial
+          setRadialMenuOpen(prev => !prev);
+          break;
       }
     };
     window.addEventListener("keypress", handleKeyPress);
@@ -1052,6 +1177,18 @@ export default function AppV3Premium() {
       
       {/* Moniteur performance V3.0 */}
       <PerformanceMonitor />
+      
+      {/* Analyseur de modèle 3D */}
+      <ModelAnalyzer 
+        model={multiSTLRef.current?.getCurrentModel()} 
+        visible={analyzeMode}
+        material={analyzeMaterial}
+      />
+      
+      {/* Bouton Menu Radial */}
+      <RadialMenuButton 
+        onToggle={(isOpen) => setRadialMenuOpen(isOpen)}
+      />
     </>
   );
 }

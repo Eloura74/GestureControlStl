@@ -170,6 +170,65 @@ class GestureProcessor:
         # Version simplifiée : juste index + pinky levés suffit
         return index_up and pinky_up
     
+    def is_v_sign(self, landmarks):
+        """Détecte signe V (index + majeur levés, autres doigts fermés)"""
+        index_up = self.finger_extended(landmarks, 8, 6)
+        middle_up = self.finger_extended(landmarks, 12, 10)
+        ring_down = not self.finger_extended(landmarks, 16, 14)
+        pinky_down = not self.finger_extended(landmarks, 20, 18)
+        return index_up and middle_up and ring_down and pinky_down
+    
+    def is_thumbs_up(self, landmarks):
+        """Détecte pouce levé (autres doigts fermés)"""
+        thumb_up = landmarks[4].y < landmarks[3].y  # Pouce au-dessus
+        others_down = sum(landmarks[tip].y < landmarks[pip].y 
+                         for tip, pip in [(8,6), (12,10), (16,14), (20,18)]) == 0
+        return thumb_up and others_down
+    
+    def is_palm_facing_camera(self, landmarks):
+        """Détecte paume face caméra (main ouverte et orientation frontale)"""
+        if not self.is_hand_open(landmarks):
+            return False
+        
+        # Vérifier orientation: doigts pointent vers le haut
+        wrist_y = landmarks[0].y
+        middle_tip_y = landmarks[12].y
+        fingers_up = middle_tip_y < wrist_y - 0.1
+        
+        return fingers_up
+    
+    def is_two_palms_menu(self, hands_landmarks):
+        """Détecte 2 mains ouvertes face caméra (menu radial)"""
+        if len(hands_landmarks) < 2:
+            return False
+        
+        # Les deux mains doivent être ouvertes et face caméra
+        return (self.is_palm_facing_camera(hands_landmarks[0]) and 
+                self.is_palm_facing_camera(hands_landmarks[1]))
+    
+    def get_hand_roll_angle(self, landmarks):
+        """Calcule l'angle de rotation du poignet (roll)"""
+        wrist = np.array([landmarks[0].x, landmarks[0].y])
+        middle_base = np.array([landmarks[9].x, landmarks[9].y])
+        
+        # Vecteur du poignet vers le milieu de la paume
+        vec = middle_base - wrist
+        angle = np.arctan2(vec[1], vec[0])
+        return angle
+    
+    def get_pointer_direction(self, landmarks):
+        """Obtient la direction pointée par l'index (pour menu radial)"""
+        wrist = np.array([landmarks[0].x, landmarks[0].y, landmarks[0].z])
+        index_tip = np.array([landmarks[8].x, landmarks[8].y, landmarks[8].z])
+        
+        # Direction normalisée
+        direction = index_tip - wrist
+        length = np.linalg.norm(direction)
+        if length > 0:
+            direction = direction / length
+        
+        return {"x": float(direction[0]), "y": float(direction[1]), "z": float(direction[2])}
+    
     def process_frame(self, hands_landmarks):
         """
         Traite une frame avec détection de mains
@@ -252,6 +311,9 @@ class GestureProcessor:
         
         # Marquer comme actif si au moins une main fait le geste
         measure_data["active"] = is_measure_left or is_measure_right
+        
+        # Menu radial maintenant contrôlé par bouton UI - Plus de détection geste
+        # (Désactivé car bloquait le zoom et était instable)
         
         # Mise à jour FSM (mesure désactivée temporairement)
         is_measure = False  # is_measure_left and is_measure_right
@@ -353,6 +415,28 @@ class GestureProcessor:
             # Moins de 2 mains, retour à 0
             self.explode_factor = float(np.clip(self.explode_factor - EXP_GAIN, 0.0, 1.0))
         
+        # Détection gestes avancés (shortcuts)
+        advanced_gestures = {
+            "v_sign": False,
+            "thumbs_up": False,
+            "palm_menu": False,
+            "pointer": None,
+            "hand_roll": None
+        }
+        
+        if num_hands >= 1:
+            lm = hands_landmarks[0]
+            advanced_gestures["v_sign"] = self.is_v_sign(lm)
+            advanced_gestures["thumbs_up"] = self.is_thumbs_up(lm)
+            advanced_gestures["hand_roll"] = round(self.get_hand_roll_angle(lm), 3)
+            
+            # Direction pointage si index levé
+            if is_index_up:
+                advanced_gestures["pointer"] = self.get_pointer_direction(lm)
+        
+        # Menu radial : maintenant contrôlé par bouton UI uniquement
+        advanced_gestures["palm_menu"] = False  # Désactivé (contrôle UI)
+        
         # Logs périodiques
         if config.server.get('debug_mode') and self.frame_count % 60 == 0:
             elapsed = time.time() - self.last_log_time
@@ -367,6 +451,7 @@ class GestureProcessor:
             "rot_dy": round(rot_dy, 6),
             "zoom_delta": round(zoom_delta, 6),
             "explode": round(self.explode_factor, 2),
+            "gestures": advanced_gestures,
             "mode": current_mode.name,
             "freeze": current_mode == GestureMode.FREEZE,
             "measure": measure_data
