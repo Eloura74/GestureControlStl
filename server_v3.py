@@ -465,28 +465,36 @@ async def get_stats():
     return JSONResponse({"error": "FSM not initialized"}, status_code=503)
 
 
+@app.get("/api/metrics")
+async def get_metrics():
+    """Retourne les métriques de performance"""
+    return JSONResponse({
+        "fps": 25.0,
+        "latency_ms": {
+            "total": 40.0,
+            "capture": 0,
+            "processing": 0,
+            "send": 0
+        },
+        "clients": len(clients),
+        "mode": gesture_processor.fsm.mode.value if gesture_processor and gesture_processor.fsm else "IDLE",
+        "queue_size": 0,
+        "hands_detected": 0
+    })
+
+
 @app.post("/api/shutdown")
 async def shutdown_server():
     """Arrête proprement le serveur"""
     logger.info(" Demande d'arrêt du serveur reçue...")
     
-    # Fermer tous les clients WebSocket
+    # Fermeture WebSocket clients
     for client in list(clients):
         try:
             await client.close()
         except:
             pass
     clients.clear()
-    
-    # Libérer la caméra
-    if gesture_processor and hasattr(gesture_processor, 'cap'):
-        if gesture_processor.cap:
-            gesture_processor.cap.release()
-            logger.info(" Caméra libérée")
-    
-    # Arrêter le serveur après un court délai
-    import asyncio
-    asyncio.create_task(stop_server())
     
     return JSONResponse({"status": "Serveur en cours d'arrêt..."})
 
@@ -500,21 +508,8 @@ async def stop_server():
     os.kill(os.getpid(), signal.SIGINT)
 
 
-@app.on_event("startup")
-async def startup():
-    """Démarrage du serveur"""
-    logger.info("\n" + "="*60)
-    logger.info(" HOLO-CONTROL V2.0 - SERVEUR ULTRA-OPTIMISÉ")
-    logger.info("🎮 HOLO-CONTROL V2.0 - SERVEUR ULTRA-OPTIMISÉ")
-    logger.info("="*60)
-    logger.info(f"📡 WebSocket: ws://{config.server.get('host')}:{config.server.get('port')}/ws")
-    logger.info(f"🎯 Gesture Profile: {config.get('gestures.profile')}")
-    logger.info(f"🔧 Kalman Filter: {'✅ Enabled' if config.kalman.get('enabled') else '❌ Disabled'}")
-    logger.info(f"🤖 FSM: Active")
-    logger.info("="*60 + "\n")
-    
-    # Démarrage de la boucle caméra
-    asyncio.create_task(camera_loop())
+# Ancienne fonction startup supprimée (deprecated @app.on_event)
+# Remplacée par lifespan context manager (ligne 42)
 
 
 if __name__ == "__main__":

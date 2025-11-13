@@ -3,6 +3,14 @@
  * Effets visuels avancés pour interface holographique
  */
 
+/* Fix scroll et overflow */
+html, body {
+  overflow: hidden !important;
+  position: fixed !important;
+  width: 100vw;
+  height: 100vh;
+}
+
 /* Glass-morphism global */
 .hud-panel,
 .state-badge,
