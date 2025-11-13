@@ -1,0 +1,223 @@
+/**
+ * HOLO-CONTROL V3 PREMIUM - Styles Glass-morphism
+ * Effets visuels avancés pour interface holographique
+ */
+
+/* Glass-morphism global */
+.hud-panel,
+.state-badge,
+.profile-selector,
+.gestures-hud {
+  backdrop-filter: blur(20px) saturate(180%);
+  background: rgba(20, 40, 50, 0.2) !important;
+  border: 1px solid rgba(0, 255, 200, 0.3) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 255, 200, 0.1);
+}
+
+/* StateBadge animé avec glow pulsant */
+.state-badge {
+  animation: glow-pulse 2s infinite;
+  transition: all 0.3s ease;
+}
+
+@keyframes glow-pulse {
+  0%, 100% { 
+    box-shadow: 0 0 10px rgba(0, 255, 255, 0.5),
+                0 8px 32px 0 rgba(0, 255, 200, 0.1); 
+  }
+  50% { 
+    box-shadow: 0 0 20px rgba(0, 255, 255, 0.8),
+                0 0 30px rgba(0, 255, 255, 0.4),
+                0 8px 32px 0 rgba(0, 255, 200, 0.2); 
+  }
+}
+
+/* Webcam PiP avec bordure animée */
+.webcam-pip {
+  border: 2px solid #0ff !important;
+  box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+  animation: border-pulse 2s infinite;
+  position: relative;
+}
+
+@keyframes border-pulse {
+  0%, 100% { 
+    border-color: #0ff; 
+    box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+  }
+  50% { 
+    border-color: #0aa; 
+    box-shadow: 0 0 30px rgba(0, 255, 255, 0.8);
+  }
+}
+
+/* Badge LIVE sur webcam */
+.webcam-pip::before {
+  content: "LIVE";
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  background: #f00;
+  color: #fff;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: bold;
+  border-radius: 3px;
+  animation: live-blink 1.5s infinite;
+  z-index: 10;
+  box-shadow: 0 0 10px rgba(255, 0, 0, 0.8);
+}
+
+@keyframes live-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* Boutons avec effet hover holographique */
+button {
+  backdrop-filter: blur(20px) saturate(180%);
+  background: rgba(0, 40, 60, 0.3) !important;
+  border: 1px solid rgba(0, 255, 200, 0.4) !important;
+  color: #0ff !important;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 16px rgba(0, 255, 200, 0.1);
+}
+
+button:hover {
+  background: rgba(0, 60, 80, 0.5) !important;
+  border-color: rgba(0, 255, 200, 0.8) !important;
+  box-shadow: 0 0 20px rgba(0, 255, 200, 0.4),
+              0 4px 16px rgba(0, 255, 200, 0.2);
+  transform: translateY(-2px);
+}
+
+button:active {
+  transform: translateY(0);
+  box-shadow: 0 0 10px rgba(0, 255, 200, 0.3);
+}
+
+/* Text glow effect */
+.hud-panel *,
+.state-badge *,
+.metrics-display * {
+  text-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+}
+
+/* Scan line overlay (optionnel) */
+body::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0, 255, 255, 0.02) 50%,
+    transparent 100%
+  );
+  background-size: 100% 4px;
+  animation: scan-overlay 8s linear infinite;
+  z-index: 9999;
+  opacity: 0.3;
+}
+
+@keyframes scan-overlay {
+  0% { background-position: 0 0; }
+  100% { background-position: 0 100vh; }
+}
+
+/* Profileselector enhanced */
+.profile-selector select {
+  backdrop-filter: blur(20px);
+  background: rgba(0, 40, 60, 0.4) !important;
+  border: 1px solid rgba(0, 255, 200, 0.4);
+  color: #0ff;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-family: monospace;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.profile-selector select:hover {
+  border-color: rgba(0, 255, 200, 0.8);
+  box-shadow: 0 0 15px rgba(0, 255, 200, 0.3);
+}
+
+.profile-selector select:focus {
+  outline: none;
+  border-color: #0ff;
+  box-shadow: 0 0 20px rgba(0, 255, 200, 0.5);
+}
+
+/* Stop button premium */
+.stop-button {
+  backdrop-filter: blur(20px);
+  background: rgba(60, 0, 0, 0.3) !important;
+  border: 1px solid rgba(255, 50, 50, 0.5) !important;
+  color: #f55 !important;
+  animation: stop-pulse 3s infinite;
+}
+
+@keyframes stop-pulse {
+  0%, 100% { 
+    box-shadow: 0 0 10px rgba(255, 50, 50, 0.3); 
+  }
+  50% { 
+    box-shadow: 0 0 20px rgba(255, 50, 50, 0.6); 
+  }
+}
+
+.stop-button:hover {
+  background: rgba(80, 0, 0, 0.5) !important;
+  border-color: rgba(255, 50, 50, 0.8) !important;
+  box-shadow: 0 0 25px rgba(255, 50, 50, 0.8) !important;
+}
+
+/* Gestures HUD enhanced */
+.gestures-hud {
+  font-family: 'Courier New', monospace;
+  letter-spacing: 1px;
+}
+
+.gestures-hud .gesture-item {
+  padding: 4px 8px;
+  margin: 2px 0;
+  background: rgba(0, 255, 200, 0.05);
+  border-left: 2px solid rgba(0, 255, 200, 0.4);
+  transition: all 0.2s ease;
+}
+
+.gestures-hud .gesture-item:hover {
+  background: rgba(0, 255, 200, 0.1);
+  border-left-color: #0ff;
+  transform: translateX(4px);
+}
+
+/* Animations d'entrée */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.hud-panel,
+.state-badge,
+.webcam-pip,
+.profile-selector {
+  animation: fade-in-up 0.6s ease-out;
+}
+
+/* Delay pour effet cascade */
+.state-badge { animation-delay: 0.1s; }
+.webcam-pip { animation-delay: 0.2s; }
+.profile-selector { animation-delay: 0.3s; }
+.gestures-hud { animation-delay: 0.4s; }
