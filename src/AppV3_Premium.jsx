@@ -28,6 +28,11 @@ import GhostReticule from "./components/GhostReticule";
 import { autoFitMesh, createEnhancedHolographicShader } from "./three/utils";
 import { DirectionalParticleSystem, VolumetricGradient } from "./three/ParticleSystem";
 import { TouchLaserManager } from "./three/LaserPointer";
+import { SliceViewManager, SliceViewKeyboardController } from "./three/SliceViewManager";
+import { GestureRecorder, RecorderUIController } from "./three/GestureRecorder";
+import { MultiSTLManager, STLGalleryController } from "./three/MultiSTLManager";
+import RecorderPanel from "./components/RecorderPanel";
+import ModelGallery from "./components/ModelGallery";
 
 const WS_URL = "ws://127.0.0.1:8765/ws";
 const RECONNECT_DELAYS = [500, 1000, 2000, 5000, 5000];
@@ -46,7 +51,7 @@ export default function AppV3Premium() {
   const stateRef = useRef({
     rotX: 0, rotY: 0,
     targetRotX: 0, targetRotY: 0,
-    distance: 4.0, targetDistance: 4.0,
+    distance: 3.0, targetDistance: 3.0,  
     explode: 0.0,
     mode: "IDLE",
     freeze: false,
@@ -55,18 +60,22 @@ export default function AppV3Premium() {
   });
 
   useEffect(() => {
+    // Nettoyer tout canvas orphelin au démarrage
+    const existingCanvases = mountRef.current?.querySelectorAll('canvas');
+    existingCanvases?.forEach(canvas => canvas.remove());
+    
     // Scene 3D avec fond noir pur
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x000000);
     scene.fog = new THREE.FogExp2(0x01060C, 0.08);
 
     const camera = new THREE.PerspectiveCamera(
-      35,
+      50,  // 35→50 : FOV plus large pour mieux voir le modèle
       window.innerWidth / window.innerHeight,
       0.01,
       100
     );
-    camera.position.set(0, 0, stateRef.current.distance);
+    camera.position.set(0, 0, 3);  // Distance initiale réduite
 
     // Renderer optimisé
     const renderer = new THREE.WebGLRenderer({ 
@@ -167,55 +176,60 @@ export default function AppV3Premium() {
     const touchLaser = new TouchLaserManager(scene, camera);
     const allMeshes = []; // Tableau pour stocker les meshes à tester
 
+    // EFFET 7: Slice View Mode
+    const sliceManager = new SliceViewManager(scene, renderer);
+    const sliceController = new SliceViewKeyboardController(sliceManager);
+
     // Matériau holographique PREMIUM (avec effets avancés)
     const wireframeMaterial = createEnhancedHolographicShader();
     const materialRef = { current: wireframeMaterial };
 
-    // Loader STL avec auto-fit
-    const loader = new STLLoader();
-    loader.load(
-      "/models/Frame_Bolt.stl",
-      (geo) => {
-        geo.computeVertexNormals();
-        geo.center();
+    // EFFET 8: Gesture Recorder
+    const gestureRecorder = new GestureRecorder();
+    const recorderUI = new RecorderUIController(gestureRecorder);
+    const cleanupHotkeys = recorderUI.setupHotkeys();
+
+    // EFFET 9: Multi-STL Manager
+    const autoFitFunc = (mesh) => {
+      const fitData = autoFitMesh(mesh, camera);
+      if (fitData) {
+        stateRef.current.distance = fitData.optimalDistance;
+        stateRef.current.targetDistance = fitData.optimalDistance;
+      }
+    };
+    
+    const multiSTL = new MultiSTLManager(scene, root, wireframeMaterial, camera, autoFitFunc);
+    const galleryController = new STLGalleryController(multiSTL);
+    
+    // Ajouter des modèles STL à la galerie
+    multiSTL.addModel("/models/Frame_Bolt.stl", "Frame Bolt");
+    // Ajouter d'autres modèles si disponibles
+    // multiSTL.addModel("/models/autre_modele.stl", "Autre Modèle");
+
+    // Charger le premier modèle via MultiSTL
+    (async () => {
+      try {
+        await multiSTL.loadModel(0);
+        await multiSTL.switchToModel(0);
         
-        const mesh = new THREE.Mesh(geo, wireframeMaterial);
-        mesh.scale.set(0.02, 0.02, 0.02);
-        root.add(mesh);
-        
-        // Ajouter au tableau pour laser raycasting
-        allMeshes.push(mesh);
-        
-        // Auto-fit du modèle dans la caméra
-        const fitData = autoFitMesh(mesh, camera);
-        if (fitData) {
-          stateRef.current.distance = fitData.optimalDistance;
-          stateRef.current.targetDistance = fitData.optimalDistance;
-          camera.position.z = fitData.optimalDistance;
-          console.log("✅ Auto-fit appliqué");
-        }
-        
-        // Explosion: store vertices
-        const positions = geo.attributes.position.array;
-        const origPos = new Float32Array(positions);
-        mesh.userData.originalPositions = origPos;
-        
-        mesh.userData.applyExplosion = (factor) => {
-          for (let i = 0; i < positions.length; i += 3) {
-            const x = origPos[i];
-            const y = origPos[i + 1];
-            const z = origPos[i + 2];
-            const len = Math.sqrt(x*x + y*y + z*z) || 1;
-            positions[i] = x + (x / len) * factor * 0.3;
-            positions[i + 1] = y + (y / len) * factor * 0.3;
-            positions[i + 2] = z + (z / len) * factor * 0.3;
+        // Ajouter mesh au tableau pour laser
+        const currentMesh = multiSTL.getCurrentMesh();
+        if (currentMesh) {
+          allMeshes.push(currentMesh);
+          
+          // Auto-fit initial
+          const fitData = autoFitMesh(currentMesh, camera);
+          if (fitData) {
+            stateRef.current.distance = fitData.optimalDistance;
+            stateRef.current.targetDistance = fitData.optimalDistance;
+            camera.position.z = fitData.optimalDistance;
+            console.log("✅ Auto-fit initial appliqué");
           }
-          geo.attributes.position.needsUpdate = true;
-        };
-      },
-      undefined,
-      (err) => console.error("❌ Erreur chargement STL:", err)
-    );
+        }
+      } catch (err) {
+        console.error("❌ Erreur chargement modèle initial:", err);
+      }
+    })();
 
     // WebSocket (identique V3)
     function connectWebSocket() {
@@ -342,6 +356,121 @@ export default function AppV3Premium() {
     };
     window.addEventListener("holo:laser:toggle", handleLaserToggle);
 
+    // Listener pour toggle slice
+    const handleSliceToggle = (e) => {
+      sliceManager.setEnabled(e.detail.enabled);
+      console.log(`🔪 Slice Mode: ${e.detail.enabled ? 'ON' : 'OFF'} [${sliceManager.mode}]`);
+    };
+    window.addEventListener("holo:slice:toggle", handleSliceToggle);
+
+    // Listener pour changer axe slice
+    const handleSliceAxis = (e) => {
+      sliceManager.setMode(e.detail.axis);
+      console.log(`🔪 Slice Axis: ${e.detail.axis}`);
+    };
+    window.addEventListener("holo:slice:axis", handleSliceAxis);
+
+    // Listeners pour Recorder
+    const handleToggleRecording = () => {
+      recorderUI.toggleRecording();
+    };
+    const handleTogglePlayback = () => {
+      recorderUI.togglePlayback();
+    };
+    const handlePause = () => {
+      gestureRecorder.togglePause();
+    };
+    const handleStop = () => {
+      if (gestureRecorder.isRecording) {
+        gestureRecorder.stopRecording();
+      } else if (gestureRecorder.isPlaying) {
+        gestureRecorder.stopPlayback();
+      }
+    };
+    const handlePlay = (e) => {
+      gestureRecorder.startPlayback(e.detail.id);
+    };
+    const handleDelete = (e) => {
+      gestureRecorder.deleteRecording(e.detail.id);
+    };
+    const handleExport = (e) => {
+      gestureRecorder.exportToJSON(e.detail.id);
+    };
+    const handleImport = (e) => {
+      gestureRecorder.importFromJSON(e.detail.json);
+    };
+    const handleGetRecordings = () => {
+      const recordings = gestureRecorder.getRecordings();
+      window.dispatchEvent(new CustomEvent("recorder:recordings-list", {
+        detail: { recordings }
+      }));
+    };
+    const handleGetState = () => {
+      const state = gestureRecorder.getState();
+      window.dispatchEvent(new CustomEvent("recorder:state-update", {
+        detail: state
+      }));
+    };
+    const handleGetProgress = () => {
+      const state = gestureRecorder.getState();
+      window.dispatchEvent(new CustomEvent("recorder:state-update", {
+        detail: state
+      }));
+    };
+
+    window.addEventListener("recorder:toggle-recording", handleToggleRecording);
+    window.addEventListener("recorder:toggle-playback", handleTogglePlayback);
+    window.addEventListener("recorder:pause", handlePause);
+    window.addEventListener("recorder:stop", handleStop);
+    window.addEventListener("recorder:play", handlePlay);
+    window.addEventListener("recorder:delete", handleDelete);
+    window.addEventListener("recorder:export", handleExport);
+    window.addEventListener("recorder:import", handleImport);
+    window.addEventListener("recorder:get-recordings", handleGetRecordings);
+    window.addEventListener("recorder:get-state", handleGetState);
+    window.addEventListener("recorder:get-progress", handleGetProgress);
+
+    // Listeners pour MultiSTL
+    const handleMultiSTLSwitch = (e) => {
+      multiSTL.switchToModel(e.detail.index).then(() => {
+        // Mettre à jour allMeshes pour laser
+        const currentMesh = multiSTL.getCurrentMesh();
+        if (currentMesh) {
+          allMeshes.length = 0;
+          allMeshes.push(currentMesh);
+        }
+      });
+    };
+    const handleMultiSTLNext = () => {
+      multiSTL.nextModel().then(() => {
+        const currentMesh = multiSTL.getCurrentMesh();
+        if (currentMesh) {
+          allMeshes.length = 0;
+          allMeshes.push(currentMesh);
+        }
+      });
+    };
+    const handleMultiSTLPrevious = () => {
+      multiSTL.previousModel().then(() => {
+        const currentMesh = multiSTL.getCurrentMesh();
+        if (currentMesh) {
+          allMeshes.length = 0;
+          allMeshes.push(currentMesh);
+        }
+      });
+    };
+    const handleMultiSTLGetList = () => {
+      const models = multiSTL.getModelsList();
+      window.dispatchEvent(new CustomEvent("multiSTL:models-list", {
+        detail: { models }
+      }));
+    };
+
+    window.addEventListener("multiSTL:switch", handleMultiSTLSwitch);
+    window.addEventListener("multiSTL:next", handleMultiSTLNext);
+    window.addEventListener("multiSTL:previous", handleMultiSTLPrevious);
+    window.addEventListener("multiSTL:get-list", handleMultiSTLGetList);
+
     // Position souris pour contrôle laser (temporaire)
     const mousePos = { x: 0.5, y: 0.5 };
     const handleMouseMove = (e) => {
@@ -436,6 +565,31 @@ export default function AppV3Premium() {
         touchLaser.laser.setActive(false);
       }
 
+      // EFFET 11: Slice View (contrôle clavier)
+      sliceController.update();
+
+      // EFFET 12: Gesture Recorder
+      if (gestureRecorder.isRecording) {
+        // Enregistrer la frame actuelle
+        gestureRecorder.recordFrame({
+          rotX: s.rotX,
+          rotY: s.rotY,
+          zoom: s.targetDistance - s.distance,
+          explode: s.explode,
+          mode: s.mode,
+          freeze: s.freeze
+        });
+      } else if (gestureRecorder.isPlaying) {
+        // Rejouer les gestes enregistrés
+        const playbackFrame = gestureRecorder.getPlaybackFrame();
+        if (playbackFrame) {
+          s.targetRotX += playbackFrame.rotY;
+          s.targetRotY += playbackFrame.rotX;
+          s.targetDistance = Math.max(1.2, Math.min(12.0, s.targetDistance - playbackFrame.zoom));
+          s.explode = playbackFrame.explode;
+        }
+      }
+
       // Explosion
       root.traverse((obj) => {
         if (obj.isMesh && obj.userData.applyExplosion) {
@@ -492,14 +646,57 @@ export default function AppV3Premium() {
       window.removeEventListener("resize", handleResize);
       window.removeEventListener("keypress", handleKeyPress);
       window.removeEventListener("holo:laser:toggle", handleLaserToggle);
+      window.removeEventListener("holo:slice:toggle", handleSliceToggle);
+      window.removeEventListener("holo:slice:axis", handleSliceAxis);
       window.removeEventListener("mousemove", handleMouseMove);
+      
+      window.removeEventListener("recorder:toggle-recording", handleToggleRecording);
+      window.removeEventListener("recorder:toggle-playback", handleTogglePlayback);
+      window.removeEventListener("recorder:pause", handlePause);
+      window.removeEventListener("recorder:stop", handleStop);
+      window.removeEventListener("recorder:play", handlePlay);
+      window.removeEventListener("recorder:delete", handleDelete);
+      window.removeEventListener("recorder:export", handleExport);
+      window.removeEventListener("recorder:import", handleImport);
+      window.removeEventListener("recorder:get-recordings", handleGetRecordings);
+      window.removeEventListener("recorder:get-state", handleGetState);
+      window.removeEventListener("recorder:get-progress", handleGetProgress);
+      
+      window.removeEventListener("multiSTL:switch", handleMultiSTLSwitch);
+      window.removeEventListener("multiSTL:next", handleMultiSTLNext);
+      window.removeEventListener("multiSTL:previous", handleMultiSTLPrevious);
+      window.removeEventListener("multiSTL:get-list", handleMultiSTLGetList);
+      
+      cleanupHotkeys();
+      galleryController.dispose();
       if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
       if (heartbeatInterval.current) clearInterval(heartbeatInterval.current);
       if (metricsInterval) clearInterval(metricsInterval);
       if (wsRef.current) wsRef.current.close();
       particleSystem.dispose();
       touchLaser.dispose();
-      mountRef.current?.removeChild(renderer.domElement);
+      sliceManager.dispose();
+      sliceController.dispose();
+      gestureRecorder.dispose();
+      multiSTL.dispose();
+      
+      // Nettoyer le renderer et le canvas
+      if (mountRef.current && renderer.domElement) {
+        try {
+          mountRef.current.removeChild(renderer.domElement);
+        } catch (e) {
+          console.warn("Canvas déjà supprimé");
+        }
+      }
+      renderer.dispose();
+      
+      // Nettoyer tous les canvas orphelins
+      const remainingCanvases = document.querySelectorAll('canvas');
+      remainingCanvases.forEach(canvas => {
+        if (canvas.parentElement === mountRef.current) {
+          canvas.remove();
+        }
+      });
     };
   }, []);
 
@@ -516,6 +713,10 @@ export default function AppV3Premium() {
       {/* HUD Détaillé (optionnel, peut être caché par défaut) */}
       <GesturesHUD />
       <WebcamPiP />
+      
+      {/* Panels avancés */}
+      <RecorderPanel />
+      <ModelGallery />
     </>
   );
 }

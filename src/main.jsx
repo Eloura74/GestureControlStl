@@ -9,7 +9,5 @@ import './index.css'
 import './premium.css'  // ← AJOUTE ICI
 
 ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <AppV3Premium />  // ← ET ICI
-  </React.StrictMode>,
+  <AppV3Premium />
 )

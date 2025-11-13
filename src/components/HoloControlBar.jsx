@@ -16,6 +16,8 @@ export default function HoloControlBar() {
   const [explodeMode, setExplodeMode] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [laserMode, setLaserMode] = useState(false);
+  const [sliceMode, setSliceMode] = useState(false);
+  const [sliceAxis, setSliceAxis] = useState('X');
 
   const profiles = [
     { id: "precise", label: "🎯 Précis", color: "#00aaff" },
@@ -113,6 +115,26 @@ export default function HoloControlBar() {
     setLaserMode(newLaserState);
     window.dispatchEvent(new CustomEvent("holo:laser:toggle", {
       detail: { enabled: newLaserState }
+    }));
+  };
+
+  // Toggle slice mode
+  const toggleSlice = () => {
+    const newSliceState = !sliceMode;
+    setSliceMode(newSliceState);
+    window.dispatchEvent(new CustomEvent("holo:slice:toggle", {
+      detail: { enabled: newSliceState }
+    }));
+  };
+
+  // Cycle slice axis
+  const cycleSliceAxis = () => {
+    const axes = ['X', 'Y', 'Z'];
+    const currentIndex = axes.indexOf(sliceAxis);
+    const nextAxis = axes[(currentIndex + 1) % axes.length];
+    setSliceAxis(nextAxis);
+    window.dispatchEvent(new CustomEvent("holo:slice:axis", {
+      detail: { axis: nextAxis }
     }));
   };
 
@@ -229,6 +251,26 @@ export default function HoloControlBar() {
         >
           🔫
         </button>
+
+        {/* Slice Mode Toggle */}
+        <button
+          className={`holo-bar-btn ${sliceMode ? 'active slice-active' : ''}`}
+          onClick={toggleSlice}
+          title="Slice View Mode (Coupe dynamique)"
+        >
+          🔪
+        </button>
+
+        {/* Slice Axis (si actif) */}
+        {sliceMode && (
+          <button
+            className="holo-bar-btn slice-axis-btn"
+            onClick={cycleSliceAxis}
+            title="Axe de coupe (clic pour changer)"
+          >
+            {sliceAxis}
+          </button>
+        )}
       </div>
 
       <div className="holo-bar-section holo-bar-right">

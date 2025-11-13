@@ -208,6 +208,36 @@
   }
 }
 
+/* Slice Mode */
+.slice-active {
+  background: rgba(255, 200, 0, 0.2) !important;
+  border-color: #ffc800 !important;
+  color: #ffc800 !important;
+  animation: slicePulse 1.5s ease-in-out infinite;
+  box-shadow: 0 0 20px rgba(255, 200, 0, 0.5);
+}
+
+@keyframes slicePulse {
+  0%, 100% { 
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% { 
+    opacity: 0.85;
+    transform: scale(1.05);
+  }
+}
+
+.slice-axis-btn {
+  background: rgba(255, 200, 0, 0.15) !important;
+  border-color: #ffc800 !important;
+  color: #ffc800 !important;
+  font-weight: 700;
+  font-size: 14px;
+  min-width: 40px;
+  box-shadow: 0 0 15px rgba(255, 200, 0, 0.3);
+}
+
 /* Profile Dropdown */
 .holo-profile-dropdown {
   position: relative;

@@ -25,8 +25,8 @@ export function autoFitMesh(mesh, camera, targetDistance = null) {
   const fov = camera.fov * (Math.PI / 180);
   const distance = Math.abs(boundingSphereRadius / Math.sin(fov / 2));
 
-  // Ajouter marge de sécurité (1.5x)
-  const optimalDistance = distance * 1.5;
+  // Ajouter marge de sécurité (1.2x au lieu de 1.5x pour être plus proche)
+  const optimalDistance = distance * 1.2;
 
   // Logger pour debug
   console.log(`📐 Auto-Fit: Size=${maxDim.toFixed(2)}, Distance=${optimalDistance.toFixed(2)}`);
