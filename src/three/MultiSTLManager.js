@@ -144,22 +144,48 @@ export class MultiSTLManager {
         model.path,
         (object) => {
           // Debug : Logger la structure
-          console.log("🔍 OBJ Structure:", object);
-          console.log("🔍 Children:", object.children.length);
+          console.log(`🔍 OBJ Structure:`, object);
+          console.log(`🔍 Children: ${object.children.length}`);
           
-          // Appliquer le matériau à tous les meshes
+          // Extraire tous les meshes et les aplatir (supprimer groupes intermédiaires)
           const meshes = [];
+          const intermediateGroups = [];
+          
           object.traverse((child) => {
+            if (child.isGroup && child !== object) {
+              console.log(`  └─ Group: "${child.name}" (children: ${child.children.length})`);
+              intermediateGroups.push(child);
+            }
             if (child.isMesh) {
               console.log(`  └─ Mesh found: "${child.name}" (vertices: ${child.geometry.attributes.position.count})`);
-              child.material = this.material;
               meshes.push(child);
-            } else if (child.isGroup) {
-              console.log(`  └─ Group: "${child.name}" (children: ${child.children.length})`);
             }
           });
           
-          console.log(`📦 Total meshes found: ${meshes.length}`);
+          // Aplatir : déplacer tous les meshes directement dans object et supprimer les groupes intermédiaires
+          meshes.forEach(mesh => {
+            // Sauvegarder la matrice world avant de déplacer
+            const worldMatrix = mesh.matrixWorld.clone();
+            
+            // Retirer du parent actuel et ajouter directement à object
+            if (mesh.parent !== object) {
+              mesh.parent.remove(mesh);
+              object.add(mesh);
+              
+              // Appliquer la transformation world pour conserver la position
+              mesh.matrix.copy(worldMatrix);
+              mesh.matrix.decompose(mesh.position, mesh.quaternion, mesh.scale);
+            }
+          });
+          
+          // Supprimer les groupes intermédiaires vides
+          intermediateGroups.forEach(group => {
+            if (group.children.length === 0) {
+              group.parent.remove(group);
+            }
+          });
+          
+          console.log(`📦 Total meshes found: ${meshes.length} (flattened)`);
           
           // Calculer bounding box pour auto-scale
           const box = new THREE.Box3().setFromObject(object);
@@ -183,11 +209,18 @@ export class MultiSTLManager {
             mesh.position.sub(center);
           });
           
-          // Le groupe reste à (0,0,0) dans le root
+          // Réinitialiser complètement les transformations du groupe parent
           object.position.set(0, 0, 0);
+          object.rotation.set(0, 0, 0);
+          object.scale.set(autoScale, autoScale, autoScale);
+          object.quaternion.set(0, 0, 0, 1);
           
           // IMPORTANT : Mettre à jour les matrices après positionnement
+          object.updateMatrix();
           object.updateMatrixWorld(true);
+          
+          console.log(`📍 OBJ Group reset: pos=(0,0,0), rot=(0,0,0), scale=(${autoScale.toFixed(4)})`);
+
           
           // Recalculer la bounding box APRÈS le centrage
           const finalBox = new THREE.Box3().setFromObject(object);

@@ -542,8 +542,8 @@ export default function AppV3Premium() {
       root.rotation.y = s.rotY;
       camera.position.z = s.distance;
 
-      // EFFET 4: Flottement du modèle (lévitation)
-      root.position.y = 0.05 * Math.sin(elapsedTime * 1.5);
+      // EFFET 4: Flottement du modèle (lévitation) - Réduit pour moins de mouvement
+      root.position.y = 0.015 * Math.sin(elapsedTime * 1.0);  // 0.05→0.015 et vitesse réduite
 
       // EFFET 5: Rotation des anneaux
       rings.forEach((ring, i) => {
