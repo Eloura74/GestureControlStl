@@ -150,15 +150,16 @@ export class MultiSTLManager {
           // Extraire tous les meshes et les aplatir (supprimer groupes intermédiaires)
           const meshes = [];
           const intermediateGroups = [];
-          
           object.traverse((child) => {
-            if (child.isGroup && child !== object) {
-              console.log(`  └─ Group: "${child.name}" (children: ${child.children.length})`);
-              intermediateGroups.push(child);
-            }
             if (child.isMesh) {
-              console.log(`  └─ Mesh found: "${child.name}" (vertices: ${child.geometry.attributes.position.count})`);
+              // S'assurer que les normales sont calculées (crucial pour raycasting et annotations)
+              if (child.geometry && child.geometry.attributes && !child.geometry.attributes.normal) {
+                child.geometry.computeVertexNormals();
+              }
               meshes.push(child);
+              console.log(`  └─ Mesh found: "${child.name}" (vertices: ${child.geometry.attributes.position.count})`);
+            } else if (child.isGroup && child !== object) {
+              intermediateGroups.push(child);
             }
           });
           

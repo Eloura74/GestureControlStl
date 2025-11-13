@@ -12,6 +12,9 @@ import * as THREE from "three";
 export function autoFitMesh(mesh, camera, targetDistance = null) {
   if (!mesh || !camera) return;
 
+  // S'assurer que les matrices sont à jour pour OBJ avec scale
+  mesh.updateMatrixWorld(true);
+
   // Calculer la bounding box
   const box = new THREE.Box3().setFromObject(mesh);
   const size = box.getSize(new THREE.Vector3());
@@ -26,10 +29,16 @@ export function autoFitMesh(mesh, camera, targetDistance = null) {
   const distance = Math.abs(boundingSphereRadius / Math.sin(fov / 2));
 
   // Ajouter marge de sécurité (1.2x au lieu de 1.5x pour être plus proche)
-  const optimalDistance = distance * 1.2;
-
-  // Logger pour debug
-  console.log(`📐 Auto-Fit: Size=${maxDim.toFixed(2)}, Distance=${optimalDistance.toFixed(2)}`);
+  let optimalDistance = distance * 1.2;
+  
+  // Distance minimale pour éviter modèles trop petits (OBJ)
+  const minDistance = 1.5;
+  if (optimalDistance < minDistance) {
+    optimalDistance = minDistance;
+    console.log(`📐 Auto-Fit: Size=${maxDim.toFixed(2)} (PETIT) → Distance forcée à ${minDistance}`);
+  } else {
+    console.log(`📐 Auto-Fit: Size=${maxDim.toFixed(2)}, Distance=${optimalDistance.toFixed(2)}`);
+  }
 
   return {
     center,

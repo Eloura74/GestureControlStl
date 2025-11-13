@@ -29,12 +29,15 @@ import { PulseWaves, HandHalo, FreezeEffect, SpectacleMode } from "./three/Visua
 import { GestureRecorder, RecorderUIController } from "./three/GestureRecorder";
 import { MultiSTLManager, STLGalleryController } from "./three/MultiSTLManager";
 import { RadialMenu } from "./three/RadialMenu";
+import { SmartExplosion } from "./three/SmartExplosion";
+import { Annotations3D } from "./three/Annotations3D";
 import RecorderPanel from "./components/RecorderPanel";
 import ModelGallery from "./components/ModelGallery";
 import MeasureDisplay from "./components/MeasureDisplay";
 import PerformanceMonitor from "./components/PerformanceMonitor";
 import ModelAnalyzer from "./components/ModelAnalyzer";
 import RadialMenuButton from "./components/RadialMenuButton";
+import AnnotationControls from "./components/AnnotationControls";
 
 const WS_URL = "ws://127.0.0.1:8765/ws";
 const RECONNECT_DELAYS = [500, 1000, 2000, 5000, 5000];
@@ -52,6 +55,7 @@ export default function AppV3Premium() {
   const [analyzeMode, setAnalyzeMode] = useState(false);
   const [analyzeMaterial, setAnalyzeMaterial] = useState('acier');
   const [radialMenuOpen, setRadialMenuOpen] = useState(false);
+  const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
   
   const modelRef = useRef(null);
   const materialRef = useRef(null);
@@ -59,6 +63,8 @@ export default function AppV3Premium() {
   const multiSTLRef = useRef(null);
   const gestureRecorderRef = useRef(null);
   const radialMenuRef = useRef(null);
+  const smartExplosionRef = useRef(null);
+  const annotations3DRef = useRef(null);
   
   const stateRef = useRef({
     rotX: 0, rotY: 0,
@@ -69,13 +75,18 @@ export default function AppV3Premium() {
     freeze: false,
     lastMessage: null,
     idleTime: 0,
-    radialMenuOpen: false
+    radialMenuOpen: false,
+    toolsMenuOpen: false
   });
 
   // Synchroniser le state React avec le ref pour éviter closure dans animate()
   useEffect(() => {
     stateRef.current.radialMenuOpen = radialMenuOpen;
   }, [radialMenuOpen]);
+  
+  useEffect(() => {
+    stateRef.current.toolsMenuOpen = toolsMenuOpen;
+  }, [toolsMenuOpen]);
 
   useEffect(() => {
     // Nettoyer tout canvas orphelin au démarrage
@@ -424,8 +435,8 @@ export default function AppV3Premium() {
           // Émettre event pour PerformanceMonitor
           window.dispatchEvent(new CustomEvent('ws:message', { detail: msg }));
           
-          // Freeze si mode freeze OU playback (plus de freeze automatique pour mesure)
-          const isLocked = freeze || s.playbackActive;
+          // Freeze si mode freeze OU playback OU menu outils ouvert
+          const isLocked = freeze || s.playbackActive || s.toolsMenuOpen;
           s.freeze = isLocked;
           
           // HOLO-LOCK : Si mode FREEZE, changer la couleur du shader
@@ -563,6 +574,14 @@ export default function AppV3Premium() {
     const spectacleMode = new SpectacleMode();
     const radialMenu = new RadialMenu(scene, camera);
     radialMenuRef.current = radialMenu;
+    
+    // PHASE 3: Explosion Intelligente + Annotations
+    const smartExplosion = new SmartExplosion(scene, camera);
+    smartExplosionRef.current = smartExplosion;
+    
+    const annotations3D = new Annotations3D(scene, camera, renderer);
+    annotations3DRef.current = annotations3D;
+    
     let lastMode = 'IDLE';
     
     // Fonction pour placer un marqueur avec raycasting
@@ -850,14 +869,28 @@ export default function AppV3Premium() {
       }
       
       // Auto-fit si demandé (V-sign ou menu)
-      const currentModel = multiSTLRef.current?.getCurrentModel();
-      if (s.needsAutoFit && currentModel) {
-        autoFitMesh(currentModel, camera, s);
+      const modelData = multiSTLRef.current?.getCurrentModel();
+      if (s.needsAutoFit && modelData) {
+        const model3D = modelData.meshGroup || modelData.mesh;
+        if (model3D) {
+          autoFitMesh(model3D, camera, s);
+        }
         s.needsAutoFit = false;
       }
       
+      // ===== PHASE 3: Update Explosion Intelligente + Annotations =====
+      if (smartExplosionRef.current) {
+        smartExplosionRef.current.update(deltaTime);
+      }
+      
+      if (annotations3DRef.current) {
+        annotations3DRef.current.update();
+      }
+      
       // IDLE Mode: Animation automatique + Mode spectacle
-      if (s.mode === 'IDLE' && !isLocked) {
+      // Désactiver si menu outils ouvert
+      const isToolsMenuOpen = s.toolsMenuOpen;
+      if (s.mode === 'IDLE' && !isLocked && !isToolsMenuOpen) {
         s.idleTime += deltaTime;
         
         // Rotation automatique lente après 2s
@@ -1056,6 +1089,23 @@ export default function AppV3Premium() {
     };
     window.addEventListener("resize", handleResize);
 
+    // Handler pour placement annotations
+    const handleCanvasClick = (event) => {
+      if (annotations3DRef.current && annotations3DRef.current.isPlacementMode) {
+        const modelData = multiSTLRef.current?.getCurrentModel();
+        if (modelData) {
+          // Récupérer le mesh 3D
+          const model3D = modelData.meshGroup || modelData.mesh;
+          if (model3D) {
+            annotations3DRef.current.handleClick(event, model3D);
+          } else {
+            console.warn('⚠️ Modèle 3D non chargé pour annotation');
+          }
+        }
+      }
+    };
+    renderer.domElement.addEventListener('click', handleCanvasClick);
+
     // Hotkeys
     const handleKeyPress = (e) => {
       const s = stateRef.current;
@@ -1098,6 +1148,7 @@ export default function AppV3Premium() {
     return () => {
       window.removeEventListener("resize", handleResize);
       window.removeEventListener("keypress", handleKeyPress);
+      renderer.domElement.removeEventListener('click', handleCanvasClick);
       window.removeEventListener("holo:laser:toggle", handleLaserToggle);
       window.removeEventListener("holo:slice:toggle", handleSliceToggle);
       window.removeEventListener("holo:slice:axis", handleSliceAxis);
@@ -1180,7 +1231,10 @@ export default function AppV3Premium() {
       
       {/* Analyseur de modèle 3D */}
       <ModelAnalyzer 
-        model={multiSTLRef.current?.getCurrentModel()} 
+        model={(() => {
+          const modelData = multiSTLRef.current?.getCurrentModel();
+          return modelData ? (modelData.meshGroup || modelData.mesh) : null;
+        })()}
         visible={analyzeMode}
         material={analyzeMaterial}
       />
@@ -1188,6 +1242,85 @@ export default function AppV3Premium() {
       {/* Bouton Menu Radial */}
       <RadialMenuButton 
         onToggle={(isOpen) => setRadialMenuOpen(isOpen)}
+      />
+      
+      {/* Contrôles Annotations + Explosion Intelligente */}
+      <AnnotationControls
+        onMenuToggle={(isOpen) => {
+          setToolsMenuOpen(isOpen);
+          console.log(`🛠️ Menu outils: ${isOpen ? 'ouvert' : 'fermé'} - Animation ${isOpen ? 'stoppée' : 'reprise'}`);
+        }}
+        onAnnotationMode={(mode) => {
+          if (annotations3DRef.current) {
+            annotations3DRef.current.togglePlacementMode(mode);
+          }
+        }}
+        onClearAnnotations={() => {
+          if (annotations3DRef.current) {
+            annotations3DRef.current.clearAll();
+          }
+        }}
+        onExportAnnotations={() => {
+          if (annotations3DRef.current) {
+            const data = annotations3DRef.current.export();
+            const json = JSON.stringify(data, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `annotations_${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            console.log('💾 Annotations exportées');
+          }
+        }}
+        onExplosionToggle={() => {
+          const modelData = multiSTLRef.current?.getCurrentModel();
+          if (smartExplosionRef.current && modelData) {
+            // Récupérer le mesh 3D (meshGroup pour OBJ, mesh pour STL)
+            const model3D = modelData.meshGroup || modelData.mesh;
+            
+            if (!model3D) {
+              console.warn('⚠️ Modèle 3D non chargé');
+              return;
+            }
+            
+            // Analyser le modèle si pas déjà fait
+            if (smartExplosionRef.current.parts.length === 0) {
+              console.log('🔍 Analyse du modèle...');
+              smartExplosionRef.current.analyzeModel(model3D);
+            }
+            // Toggle explosion
+            const newFactor = smartExplosionRef.current.explosionFactor > 0.5 ? 0 : 1;
+            console.log(`💥 Toggle explosion: ${newFactor}`);
+            smartExplosionRef.current.setExplosion(newFactor, false);
+          } else {
+            console.warn('⚠️ SmartExplosion ou modèle non disponible');
+          }
+        }}
+        onExplosionAnimate={() => {
+          const modelData = multiSTLRef.current?.getCurrentModel();
+          if (smartExplosionRef.current && modelData) {
+            // Récupérer le mesh 3D
+            const model3D = modelData.meshGroup || modelData.mesh;
+            
+            if (!model3D) {
+              console.warn('⚠️ Modèle 3D non chargé');
+              return;
+            }
+            
+            // Analyser le modèle si pas déjà fait
+            if (smartExplosionRef.current.parts.length === 0) {
+              console.log('🔍 Analyse du modèle...');
+              smartExplosionRef.current.analyzeModel(model3D);
+            }
+            // Animation
+            console.log('🎬 Explosion animée');
+            smartExplosionRef.current.setExplosion(1, true);
+          } else {
+            console.warn('⚠️ SmartExplosion ou modèle non disponible');
+          }
+        }}
       />
     </>
   );
