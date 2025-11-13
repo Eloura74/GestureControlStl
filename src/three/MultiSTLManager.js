@@ -193,8 +193,8 @@ export class MultiSTLManager {
           const maxDim = Math.max(size.x, size.y, size.z);
           
           // Calculer scale pour avoir une taille similaire aux STL
-          // Augmenter targetSize pour que les OBJ soient bien visibles
-          const targetSize = 3.0;  // 2.0 → 3.0 pour être plus grand
+          // Augmenter targetSize pour que les OBJ soient bien visibles et zoomables
+          const targetSize = 4.5;  // 3.0 → 4.5 pour permettre un meilleur zoom
           const autoScale = targetSize / maxDim;
           object.scale.set(autoScale, autoScale, autoScale);
           

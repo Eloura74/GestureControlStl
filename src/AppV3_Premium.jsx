@@ -290,8 +290,8 @@ export default function AppV3Premium() {
           s.targetRotY += rot.dx;
           s.targetRotX += rot.dy;
           s.targetRotX = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, s.targetRotX));
-          // Réduire distance min (1.2→0.5) et augmenter sensibilité pour permettre de zoomer plus près
-          s.targetDistance = Math.max(0.5, Math.min(12.0, s.targetDistance - zoom.dz));
+          // Permettre de zoomer TRES près (0.3) pour examiner les détails
+          s.targetDistance = Math.max(0.3, Math.min(12.0, s.targetDistance - zoom.dz));
           s.explode = Math.max(0, Math.min(1, explode));
           s.mode = mode;
           s.freeze = freeze;
@@ -598,7 +598,7 @@ export default function AppV3Premium() {
         if (playbackFrame) {
           s.targetRotX += playbackFrame.rotY;
           s.targetRotY += playbackFrame.rotX;
-          s.targetDistance = Math.max(0.5, Math.min(12.0, s.targetDistance - playbackFrame.zoom));
+          s.targetDistance = Math.max(0.3, Math.min(12.0, s.targetDistance - playbackFrame.zoom));
           s.explode = playbackFrame.explode;
         }
       }
@@ -720,7 +720,7 @@ export default function AppV3Premium() {
       {/* <GhostReticule /> */}
       
       {/* HUD Détaillé (optionnel, peut être caché par défaut) */}
-      <GesturesHUD />
+      {/* <GesturesHUD /> - Désactivé pour interface épurée */}
       <WebcamPiP />
       
       {/* Panels avancés */}
