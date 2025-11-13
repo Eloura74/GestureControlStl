@@ -204,6 +204,7 @@ export default function AppV3Premium() {
     // Ajouter des modèles STL à la galerie
     multiSTL.addModel("/models/Frame_Bolt.stl", "Frame Bolt");
     multiSTL.addModel("/models/roller_bearing.stl", "Roller Bearing");
+    multiSTL.addModel("/models/bearing.obj", "Bearing");
 
     // Charger tous les modèles au démarrage
     (async () => {
@@ -213,7 +214,8 @@ export default function AppV3Premium() {
         // Charger tous les modèles en parallèle
         await Promise.all([
           multiSTL.loadModel(0),
-          multiSTL.loadModel(1)
+          multiSTL.loadModel(1),
+          multiSTL.loadModel(2)  // ← Ajouter
         ]);
         
         console.log("✅ Tous les modèles chargés");
@@ -221,13 +223,14 @@ export default function AppV3Premium() {
         // Afficher le premier
         await multiSTL.switchToModel(0);
         
-        // Ajouter mesh au tableau pour laser
-        const currentMesh = multiSTL.getCurrentMesh();
-        if (currentMesh) {
-          allMeshes.push(currentMesh);
+        // Ajouter mesh(es) au tableau pour laser
+        const meshes = multiSTL.getCurrentMeshes();
+        if (meshes && meshes.length > 0) {
+          allMeshes.push(...meshes);
           
           // Auto-fit initial
-          const fitData = autoFitMesh(currentMesh, camera);
+          const meshToFit = multiSTL.getCurrentMesh();
+          const fitData = autoFitMesh(meshToFit, camera);
           if (fitData) {
             stateRef.current.distance = fitData.optimalDistance;
             stateRef.current.targetDistance = fitData.optimalDistance;
@@ -287,7 +290,8 @@ export default function AppV3Premium() {
           s.targetRotY += rot.dx;
           s.targetRotX += rot.dy;
           s.targetRotX = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, s.targetRotX));
-          s.targetDistance = Math.max(1.2, Math.min(12.0, s.targetDistance - zoom.dz));
+          // Réduire distance min (1.2→0.5) et augmenter sensibilité pour permettre de zoomer plus près
+          s.targetDistance = Math.max(0.5, Math.min(12.0, s.targetDistance - zoom.dz));
           s.explode = Math.max(0, Math.min(1, explode));
           s.mode = mode;
           s.freeze = freeze;
@@ -443,28 +447,28 @@ export default function AppV3Premium() {
     const handleMultiSTLSwitch = (e) => {
       multiSTL.switchToModel(e.detail.index).then(() => {
         // Mettre à jour allMeshes pour laser
-        const currentMesh = multiSTL.getCurrentMesh();
-        if (currentMesh) {
+        const meshes = multiSTL.getCurrentMeshes();
+        if (meshes && meshes.length > 0) {
           allMeshes.length = 0;
-          allMeshes.push(currentMesh);
+          allMeshes.push(...meshes);
         }
       });
     };
     const handleMultiSTLNext = () => {
       multiSTL.nextModel().then(() => {
-        const currentMesh = multiSTL.getCurrentMesh();
-        if (currentMesh) {
+        const meshes = multiSTL.getCurrentMeshes();
+        if (meshes && meshes.length > 0) {
           allMeshes.length = 0;
-          allMeshes.push(currentMesh);
+          allMeshes.push(...meshes);
         }
       });
     };
     const handleMultiSTLPrevious = () => {
       multiSTL.previousModel().then(() => {
-        const currentMesh = multiSTL.getCurrentMesh();
-        if (currentMesh) {
+        const meshes = multiSTL.getCurrentMeshes();
+        if (meshes && meshes.length > 0) {
           allMeshes.length = 0;
-          allMeshes.push(currentMesh);
+          allMeshes.push(...meshes);
         }
       });
     };
@@ -594,17 +598,13 @@ export default function AppV3Premium() {
         if (playbackFrame) {
           s.targetRotX += playbackFrame.rotY;
           s.targetRotY += playbackFrame.rotX;
-          s.targetDistance = Math.max(1.2, Math.min(12.0, s.targetDistance - playbackFrame.zoom));
+          s.targetDistance = Math.max(0.5, Math.min(12.0, s.targetDistance - playbackFrame.zoom));
           s.explode = playbackFrame.explode;
         }
       }
 
-      // Explosion
-      root.traverse((obj) => {
-        if (obj.isMesh && obj.userData.applyExplosion) {
-          obj.userData.applyExplosion(s.explode);
-        }
-      });
+      // Explosion : Utiliser le MultiSTL Manager (supporte STL et OBJ)
+      multiSTL.applyExplosion(s.explode);
 
       // Render avec post-processing
       composer.render();

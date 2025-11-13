@@ -4,7 +4,7 @@
  */
 
 import * as THREE from 'three';
-import { STLLoader } from 'three-stdlib';
+import { STLLoader, OBJLoader } from 'three-stdlib';
 
 export class MultiSTLManager {
   constructor(scene, root, material, camera, autoFitCallback) {
@@ -17,26 +17,33 @@ export class MultiSTLManager {
     this.models = [];
     this.currentModelIndex = 0;
     this.currentMesh = null;
-    this.loader = new STLLoader();
+    this.currentMeshGroup = null; // Pour OBJ avec plusieurs meshes
+    this.stlLoader = new STLLoader();
+    this.objLoader = new OBJLoader();
     this.isLoading = false;
     this.transitionDuration = 800; // ms
     
-    console.log("📚 MultiSTLManager initialized");
+    console.log("📚 MultiSTLManager initialized (STL + OBJ support)");
   }
 
   /**
    * Ajoute un modèle à la galerie
    */
   addModel(path, name = null) {
-    const modelName = name || path.split('/').pop().replace('.stl', '');
+    const fileExt = path.split('.').pop().toLowerCase();
+    const modelName = name || path.split('/').pop().replace(/\.(stl|obj)$/i, '');
     
     this.models.push({
       id: `model_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       path: path,
       name: modelName,
+      type: fileExt, // 'stl' ou 'obj'
       mesh: null,
+      meshGroup: null, // Pour OBJ avec plusieurs objets
+      meshes: [], // Liste des meshes si OBJ multi-objets
       geometry: null,
-      loaded: false
+      loaded: false,
+      hasMultipleParts: false // True si OBJ avec plusieurs objets
     });
     
     console.log(`➕ Model added: ${modelName} (${this.models.length} total)`);
@@ -45,7 +52,7 @@ export class MultiSTLManager {
   }
 
   /**
-   * Charge un modèle STL
+   * Charge un modèle (STL ou OBJ)
    */
   async loadModel(index) {
     if (index < 0 || index >= this.models.length) {
@@ -62,17 +69,30 @@ export class MultiSTLManager {
 
     this.isLoading = true;
     
+    // Charger selon le type de fichier
+    if (model.type === 'obj') {
+      return this.loadOBJModel(model, index);
+    } else {
+      return this.loadSTLModel(model, index);
+    }
+  }
+
+  /**
+   * Charge un modèle STL
+   */
+  loadSTLModel(model, index) {
     return new Promise((resolve, reject) => {
-      this.loader.load(
+      this.stlLoader.load(
         model.path,
         (geometry) => {
           geometry.computeVertexNormals();
           geometry.center();
           
           const mesh = new THREE.Mesh(geometry, this.material);
-          mesh.scale.set(0.05, 0.05, 0.05);  // 0.02→0.05 : Plus grand pour être visible
+          mesh.scale.set(0.05, 0.05, 0.05);
+          mesh.name = model.name;
           
-          // Stocker vertices originaux pour explosion
+          // Stocker vertices originaux pour explosion basique
           const positions = geometry.attributes.position.array;
           const origPos = new Float32Array(positions);
           mesh.userData.originalPositions = origPos;
@@ -93,20 +113,150 @@ export class MultiSTLManager {
           model.mesh = mesh;
           model.geometry = geometry;
           model.loaded = true;
+          model.hasMultipleParts = false;
           
           this.isLoading = false;
           
-          console.log(`✅ Model loaded: ${model.name}`);
+          console.log(`✅ STL Model loaded: ${model.name}`);
           
           window.dispatchEvent(new CustomEvent("multiSTL:loaded", {
-            detail: { index, name: model.name }
+            detail: { index, name: model.name, type: 'stl' }
           }));
           
           resolve(true);
         },
         undefined,
         (err) => {
-          console.error(`❌ Failed to load model: ${model.name}`, err);
+          console.error(`❌ Failed to load STL: ${model.name}`, err);
+          this.isLoading = false;
+          reject(err);
+        }
+      );
+    });
+  }
+
+  /**
+   * Charge un modèle OBJ
+   */
+  loadOBJModel(model, index) {
+    return new Promise((resolve, reject) => {
+      this.objLoader.load(
+        model.path,
+        (object) => {
+          // Debug : Logger la structure
+          console.log("🔍 OBJ Structure:", object);
+          console.log("🔍 Children:", object.children.length);
+          
+          // Appliquer le matériau à tous les meshes
+          const meshes = [];
+          object.traverse((child) => {
+            if (child.isMesh) {
+              console.log(`  └─ Mesh found: "${child.name}" (vertices: ${child.geometry.attributes.position.count})`);
+              child.material = this.material;
+              meshes.push(child);
+            } else if (child.isGroup) {
+              console.log(`  └─ Group: "${child.name}" (children: ${child.children.length})`);
+            }
+          });
+          
+          console.log(`📦 Total meshes found: ${meshes.length}`);
+          
+          // Calculer bounding box pour auto-scale
+          const box = new THREE.Box3().setFromObject(object);
+          const size = box.getSize(new THREE.Vector3());
+          const maxDim = Math.max(size.x, size.y, size.z);
+          
+          // Calculer scale pour avoir une taille similaire aux STL
+          // Augmenter targetSize pour que les OBJ soient bien visibles
+          const targetSize = 3.0;  // 2.0 → 3.0 pour être plus grand
+          const autoScale = targetSize / maxDim;
+          object.scale.set(autoScale, autoScale, autoScale);
+          
+          console.log(`📐 OBJ Auto-scale: ${maxDim.toFixed(2)} → scale ${autoScale.toFixed(4)}`);
+          
+          // Centrer l'objet après scale - IMPORTANT pour que la rotation soit centrée
+          const boxScaled = new THREE.Box3().setFromObject(object);
+          const center = boxScaled.getCenter(new THREE.Vector3());
+          
+          // Déplacer chaque mesh pour centrer l'assemblage à (0,0,0)
+          meshes.forEach(mesh => {
+            mesh.position.sub(center);
+          });
+          
+          // Le groupe reste à (0,0,0) dans le root
+          object.position.set(0, 0, 0);
+          
+          // IMPORTANT : Mettre à jour les matrices après positionnement
+          object.updateMatrixWorld(true);
+          
+          // Recalculer la bounding box APRÈS le centrage
+          const finalBox = new THREE.Box3().setFromObject(object);
+          const globalCenter = new THREE.Vector3(0, 0, 0); // Le centre est maintenant à l'origine
+          
+          // Stocker les positions de chaque mesh pour l'explosion
+          // IMPORTANT : Calculer depuis le centre de la géométrie, pas la position du mesh
+          meshes.forEach((mesh, idx) => {
+            // Calculer le centre réel de ce mesh depuis sa géométrie
+            mesh.geometry.computeBoundingBox();
+            const meshBox = mesh.geometry.boundingBox;
+            const meshCenter = new THREE.Vector3();
+            meshBox.getCenter(meshCenter);
+            
+            // Appliquer les transformations du mesh et du parent pour obtenir la position world
+            meshCenter.applyMatrix4(mesh.matrixWorld);
+            
+            // Direction depuis l'origine vers le centre de ce mesh
+            const directionFromCenter = meshCenter.clone();
+            
+            // Si la direction est quasi nulle, utiliser une direction basée sur l'index
+            if (directionFromCenter.length() < 0.01) {
+              const angle = (idx / meshes.length) * Math.PI * 2;
+              directionFromCenter.set(
+                Math.cos(angle),
+                Math.sin(angle),
+                (idx % 2) * 0.5 - 0.25
+              );
+            }
+            
+            // Stocker la position locale du mesh (pour le replacer)
+            mesh.userData.initialLocalPosition = mesh.position.clone();
+            mesh.userData.meshCenterWorld = meshCenter.clone();
+            mesh.userData.explodeDirection = directionFromCenter.normalize();
+            
+            // Garder matrixAutoUpdate = true pour que Three.js prenne en compte les changements de position
+            mesh.matrixAutoUpdate = true;
+            
+            console.log(`  🎯 Mesh "${mesh.name}": center=(${meshCenter.x.toFixed(3)},${meshCenter.y.toFixed(3)},${meshCenter.z.toFixed(3)}), dir=(${directionFromCenter.x.toFixed(2)},${directionFromCenter.y.toFixed(2)},${directionFromCenter.z.toFixed(2)})`);
+          });
+          
+          console.log(`✅ ${meshes.length} meshes ready for explosion`);
+          
+          // Le groupe parent et les meshes gardent matrixAutoUpdate = true
+          object.matrixAutoUpdate = true;
+          
+          model.meshGroup = object;
+          model.meshes = meshes;
+          model.loaded = true;
+          model.hasMultipleParts = meshes.length > 1;
+          
+          this.isLoading = false;
+          
+          console.log(`✅ OBJ Model loaded: ${model.name} (${meshes.length} parts)`);
+          
+          window.dispatchEvent(new CustomEvent("multiSTL:loaded", {
+            detail: { 
+              index, 
+              name: model.name, 
+              type: 'obj',
+              parts: meshes.length 
+            }
+          }));
+          
+          resolve(true);
+        },
+        undefined,
+        (err) => {
+          console.error(`❌ Failed to load OBJ: ${model.name}`, err);
           this.isLoading = false;
           reject(err);
         }
@@ -168,16 +318,23 @@ export class MultiSTLManager {
 
     const newModel = this.models[index];
     
-    console.log(`🔄 Switching to model: ${newModel.name}`);
+    console.log(`🔄 Switching to model: ${newModel.name} (${newModel.type})`);
 
-    // Transition avec animation
-    await this.transitionToNewModel(newModel.mesh);
+    // Transition avec animation selon le type
+    if (newModel.type === 'obj') {
+      await this.transitionToNewModel(newModel.meshGroup);
+      this.currentMeshGroup = newModel.meshGroup;
+    } else {
+      await this.transitionToNewModel(newModel.mesh);
+      this.currentMeshGroup = null;
+    }
 
     this.currentModelIndex = index;
     
     // Auto-fit du nouveau modèle
-    if (this.autoFitCallback && this.currentMesh) {
-      this.autoFitCallback(this.currentMesh);
+    const meshToFit = newModel.type === 'obj' ? newModel.meshGroup : newModel.mesh;
+    if (this.autoFitCallback && meshToFit) {
+      this.autoFitCallback(meshToFit);
     }
 
     window.dispatchEvent(new CustomEvent("multiSTL:switched", {
@@ -273,6 +430,67 @@ export class MultiSTLManager {
   }
 
   /**
+   * Applique l'explosion au modèle actuel
+   * @param {number} factor - Facteur d'explosion (0.0 à 1.0)
+   */
+  applyExplosion(factor) {
+    const currentModel = this.models[this.currentModelIndex];
+    if (!currentModel || !currentModel.loaded) return;
+
+    if (currentModel.type === 'obj' && currentModel.hasMultipleParts) {
+      // OBJ avec plusieurs parties : éclater chaque mesh
+      let appliedCount = 0;
+      
+      currentModel.meshes.forEach((mesh, idx) => {
+        const initialLocalPos = mesh.userData.initialLocalPosition;
+        const explodeDirection = mesh.userData.explodeDirection;
+        
+        if (!initialLocalPos || !explodeDirection) {
+          if (factor > 0.1 && idx === 0) {
+            console.warn("⚠️ No initial data for mesh", mesh.name, {
+              hasLocalPos: !!initialLocalPos,
+              hasDirection: !!explodeDirection
+            });
+          }
+          return;
+        }
+        
+        const explodeDistance = 2.5; // Distance maximale d'éclatement
+        
+        // Calculer l'offset d'explosion
+        const offset = explodeDirection.clone().multiplyScalar(factor * explodeDistance);
+        
+        // Appliquer la nouvelle position
+        const newPos = initialLocalPos.clone().add(offset);
+        mesh.position.set(newPos.x, newPos.y, newPos.z);
+        
+        appliedCount++;
+        
+        // Log détaillé pour le premier mesh lors de forte explosion
+        if (factor > 0.3 && idx === 0 && !this._detailedLogged) {
+          console.log(`💥 Mesh 0 explosion: initial=(${initialLocalPos.x.toFixed(3)},${initialLocalPos.y.toFixed(3)},${initialLocalPos.z.toFixed(3)}), offset=(${offset.x.toFixed(3)},${offset.y.toFixed(3)},${offset.z.toFixed(3)}), final=(${mesh.position.x.toFixed(3)},${mesh.position.y.toFixed(3)},${mesh.position.z.toFixed(3)})`);
+          this._detailedLogged = true;
+        }
+      });
+      
+      if (factor < 0.1) {
+        this._detailedLogged = false;
+      }
+      
+      // Log uniquement quand explosion active
+      if (factor > 0.1 && !this._lastLoggedFactor) {
+        console.log(`💥 OBJ Explosion applied to ${appliedCount}/${currentModel.meshes.length} meshes (factor=${factor.toFixed(2)})`);
+        this._lastLoggedFactor = true;
+      } else if (factor < 0.05) {
+        this._lastLoggedFactor = false;
+      }
+    } else if (currentModel.mesh && currentModel.mesh.userData.applyExplosion) {
+      // STL : explosion basique des vertices
+      currentModel.mesh.userData.applyExplosion(factor);
+    }
+  }
+
+  /**
    * Obtient la liste des modèles
    */
   getModelsList() {
@@ -281,6 +499,8 @@ export class MultiSTLManager {
       id: model.id,
       name: model.name,
       path: model.path,
+      type: model.type,
+      hasMultipleParts: model.hasMultipleParts,
       loaded: model.loaded,
       isCurrent: index === this.currentModelIndex
     }));
@@ -294,10 +514,25 @@ export class MultiSTLManager {
   }
 
   /**
-   * Obtient le mesh actuel
+   * Obtient le mesh actuel (ou group pour OBJ)
    */
   getCurrentMesh() {
+    const currentModel = this.models[this.currentModelIndex];
+    if (currentModel && currentModel.type === 'obj') {
+      return currentModel.meshGroup;
+    }
     return this.currentMesh;
+  }
+  
+  /**
+   * Obtient tous les meshes du modèle actuel (pour raycasting laser)
+   */
+  getCurrentMeshes() {
+    const currentModel = this.models[this.currentModelIndex];
+    if (currentModel && currentModel.type === 'obj') {
+      return currentModel.meshes || [];
+    }
+    return this.currentMesh ? [this.currentMesh] : [];
   }
 
   /**

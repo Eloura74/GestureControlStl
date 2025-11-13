@@ -306,6 +306,12 @@ class GestureProcessor:
                 # Normaliser et clamper
                 normalized = (distance - min_dist) / (max_dist - min_dist)
                 self.explode_factor = float(np.clip(normalized, 0.0, 1.0))
+                
+                # Log explosion active
+                if self.frame_count % 30 == 0:  # Log toutes les 30 frames
+                    logger.info(f"💥 EXPLOSION: dist={distance:.3f}, factor={self.explode_factor:.2f}, "
+                               f"fist_L={is_fist_left}, open_R={is_open_right}, "
+                               f"open_L={is_open_left}, fist_R={is_fist_right}")
             else:
                 # Pas de geste explosion, retour progressif à 0
                 self.explode_factor = float(np.clip(self.explode_factor - EXP_GAIN, 0.0, 1.0))
