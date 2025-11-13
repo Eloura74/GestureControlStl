@@ -297,37 +297,26 @@ class GestureProcessor:
             self.prev_wrist = None
             self.rot_vel *= VEL_DECAY
         
-        # Zoom (si mode ZOOM actif)
+        # Zoom (si mode ZOOM actif) - Version classique stable
+        zoom_delta = 0.0
         if self.fsm.can_apply_gesture("zoom") and num_hands >= 2:
-            pinch1_is, dist1 = self.is_pinching(hands_landmarks[0], gestures_cfg.get('pinch_threshold', 0.08))
-            pinch2_is, dist2 = self.is_pinching(hands_landmarks[1], gestures_cfg.get('pinch_threshold', 0.08))
+            lm_left = hands_landmarks[0]
+            lm_right = hands_landmarks[1]
             
-            if pinch1_is and pinch2_is:
-                p1 = np.array([hands_landmarks[0][4].x, hands_landmarks[0][4].y], dtype=np.float32)
-                p2 = np.array([hands_landmarks[1][4].x, hands_landmarks[1][4].y], dtype=np.float32)
-                dist_raw = float(np.linalg.norm(p2 - p1))
-                
-                # Filtrage Kalman optionnel
-                if self.kalman_enabled:
-                    dist = self.kf_pinch_dist.update(dist_raw)
-                    variance = self.kf_pinch_dist.variance
-                else:
-                    dist = dist_raw
-                    variance = 0.0
-                
-                if self.moving_avg_dist is None:
-                    self.moving_avg_dist = dist
-                
-                diff = dist - self.moving_avg_dist
-                
-                # Deadzone adaptative
-                diff_filtered = self.adaptive_dz_zoom.apply(diff, variance)
-                
-                if abs(diff_filtered) > 0:
-                    self.moving_avg_dist = 0.9 * self.moving_avg_dist + 0.1 * dist
-                    zoom_delta = diff_filtered * ZOOM_GAIN
-            else:
-                self.moving_avg_dist = None
+            # Distance euclidienne entre les 2 index (simple et stable)
+            pinch_left_pos = np.array([lm_left[8].x, lm_left[8].y])
+            pinch_right_pos = np.array([lm_right[8].x, lm_right[8].y])
+            dist = np.linalg.norm(pinch_right_pos - pinch_left_pos)
+            
+            # Filtrage / deadzone
+            if self.moving_avg_dist is None:
+                self.moving_avg_dist = dist
+            
+            delta_dist = dist - self.moving_avg_dist
+            delta_dist = self.adaptive_dz_zoom.apply(delta_dist, 0)
+            
+            zoom_delta = delta_dist
+            self.moving_avg_dist = dist * 0.9 + self.moving_avg_dist * 0.1
         else:
             self.moving_avg_dist = None
         
@@ -500,7 +489,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 try:
                     msg_data = json.loads(message)
                     if msg_data.get("type") == "ping":
-                        await websocket.send_text(json.dumps({"type": "pong"}))
+                        await websocket.send_text(json.dumps({"type": "pong", "v": 2}))
                 except:
                     pass  # Message non-JSON, ignorer
             except asyncio.TimeoutError:

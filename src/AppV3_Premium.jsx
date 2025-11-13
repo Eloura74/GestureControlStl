@@ -25,11 +25,13 @@ import WebcamPiP from "./components/WebcamPiP";
 import HoloControlBar from "./components/HoloControlBar";
 import { autoFitMesh, createEnhancedHolographicShader } from "./three/utils";
 import { DirectionalParticleSystem, VolumetricGradient } from "./three/ParticleSystem";
+import { PulseWaves, HandHalo, FreezeEffect, SpectacleMode } from "./three/VisualEffects";
 import { GestureRecorder, RecorderUIController } from "./three/GestureRecorder";
 import { MultiSTLManager, STLGalleryController } from "./three/MultiSTLManager";
 import RecorderPanel from "./components/RecorderPanel";
 import ModelGallery from "./components/ModelGallery";
 import MeasureDisplay from "./components/MeasureDisplay";
+import PerformanceMonitor from "./components/PerformanceMonitor";
 
 const WS_URL = "ws://127.0.0.1:8765/ws";
 const RECONNECT_DELAYS = [500, 1000, 2000, 5000, 5000];
@@ -340,12 +342,18 @@ export default function AppV3Premium() {
         try {
           const msg = JSON.parse(ev.data);
           
+          // Ignorer messages pong
+          if (msg.type === 'pong') return;
+          
+          // Vérifier version protocole
           if (msg.v !== 3 && msg.v !== 2) {
             console.warn("⚠️  Protocol version mismatch:", msg.v);
             return;
           }
 
           const { g, dbg, preview } = msg;
+          if (!g) return; // Pas de données gestes
+          
           const { rot, zoom, explode, freeze, mode } = g;
 
           const s = stateRef.current;
@@ -353,10 +361,14 @@ export default function AppV3Premium() {
           s.targetRotX += rot.dy;
           s.targetRotX = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, s.targetRotX));
           // Permettre de zoomer TRES près (0.3) pour examiner les détails
-          s.targetDistance = Math.max(0.3, Math.min(12.0, s.targetDistance - zoom.dz));
+          // Gain zoom augmenté x9 pour plus de sensibilité
+          s.targetDistance = Math.max(0.3, Math.min(12.0, s.targetDistance - (zoom.dz * 9.0)));
           s.explode = Math.max(0, Math.min(1, explode));
           s.mode = mode;
           s.lastMessage = msg;
+          
+          // Émettre event pour PerformanceMonitor
+          window.dispatchEvent(new CustomEvent('ws:message', { detail: msg }));
           
           // Freeze si mode freeze OU playback (plus de freeze automatique pour mesure)
           const isLocked = freeze || s.playbackActive;
@@ -489,6 +501,13 @@ export default function AppV3Premium() {
       scene.add(measureMarkers.sphere2);
     };
     createMeasureSystem();
+    
+    // ===== EFFETS VISUELS V3.0 =====
+    const pulseWaves = new PulseWaves(scene);
+    const handHalo = new HandHalo(scene, camera);
+    const freezeEffect = new FreezeEffect(scene);
+    const spectacleMode = new SpectacleMode();
+    let lastMode = 'IDLE';
     
     // Fonction pour placer un marqueur avec raycasting
     const placeMarkerAtHand = (handPos, markerNumber) => {
@@ -698,13 +717,68 @@ export default function AppV3Premium() {
       // Ne pas freezer pendant la mesure (on peut bouger pour placer les marqueurs)
       const isLocked = s.freeze;
       
-      // IDLE Mode: Animation automatique (sauf si locked)
-      if (s.mode === "IDLE" && !isLocked) {
+      // ===== UPDATE EFFETS VISUELS V3.0 =====
+      pulseWaves.update(deltaTime);
+      
+      // Détection changement de mode → onde pulsée
+      if (s.mode && s.mode !== lastMode) {
+        if (s.mode === 'ZOOM' || s.mode === 'EXPLODE' || s.mode === 'FREEZE') {
+          pulseWaves.createWave(s.mode, 1.0);
+        }
+        lastMode = s.mode;
+      }
+      
+      // Hand Halo (position main)
+      if (s.lastMessage && s.lastMessage.dbg && s.lastMessage.dbg.hands > 0) {
+        // Position fictive (centre écran pour l'instant)
+        handHalo.update({x: 0.5, y: 0.5}, elapsedTime);
+      } else {
+        handHalo.update(null, elapsedTime);
+      }
+      
+      // Effet freeze
+      freezeEffect.setActive(isLocked, elapsedTime);
+      
+      // IDLE Mode: Animation automatique + Mode spectacle
+      if (s.mode === 'IDLE' && !isLocked) {
         s.idleTime += deltaTime;
         
         // Rotation automatique lente après 2s
-        if (s.idleTime > 2.0) {
+        if (s.idleTime > 2.0 && s.idleTime <= 5.0) {
           s.targetRotY += 0.003;
+        }
+        
+        // Mode spectacle après 5s
+        if (s.idleTime > 5.0) {
+          if (!spectacleMode.isActive) {
+            spectacleMode.activate();
+          }
+          
+          const spectacle = spectacleMode.update(deltaTime);
+          if (spectacle) {
+            s.targetRotY += spectacle.rotationSpeed;
+            
+            // Color shift shader
+            if (materialRef.current && materialRef.current.uniforms && materialRef.current.uniforms.color) {
+              materialRef.current.uniforms.color.value.setRGB(
+                spectacle.colorShift.r,
+                spectacle.colorShift.g,
+                spectacle.colorShift.b
+              );
+            }
+          }
+        }
+      } else {
+        // Reset idle
+        s.idleTime = 0;
+        
+        // Désactiver spectacle si actif
+        if (spectacleMode.isActive) {
+          spectacleMode.deactivate();
+          // Reset couleur
+          if (materialRef.current && materialRef.current.uniforms && materialRef.current.uniforms.color) {
+            materialRef.current.uniforms.color.value.setRGB(0, 1, 1);
+          }
         }
       }
       
@@ -928,6 +1002,9 @@ export default function AppV3Premium() {
       if (metricsInterval) clearInterval(metricsInterval);
       if (wsRef.current) wsRef.current.close();
       particleSystem.dispose();
+      pulseWaves.dispose();
+      handHalo.dispose();
+      freezeEffect.dispose();
       if (measureMarkers.line) scene.remove(measureMarkers.line);
       if (measureMarkers.sphere1) scene.remove(measureMarkers.sphere1);
       if (measureMarkers.sphere2) scene.remove(measureMarkers.sphere2);
@@ -972,6 +1049,9 @@ export default function AppV3Premium() {
       
       {/* Affichage mesure de distance */}
       <MeasureDisplay />
+      
+      {/* Moniteur performance V3.0 */}
+      <PerformanceMonitor />
     </>
   );
 }
