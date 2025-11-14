@@ -144,20 +144,20 @@ export default function AppV3Premium() {
     const root = new THREE.Group();
     scene.add(root);
 
-    // EFFET 1: Halo volumétrique (très subtil)
-    const halo = new THREE.Mesh(
-      new THREE.SphereGeometry(3, 32, 32),
-      new THREE.MeshBasicMaterial({
-        color: 0x00aaff,
-        transparent: true,
-        opacity: 0.015,  // 0.03→0.015 : encore plus subtil
-        blending: THREE.AdditiveBlending,
-        side: THREE.BackSide
-      })
-    );
-    root.add(halo);
+    // EFFET 1: Halo volumétrique (SUPPRIMÉ - grand cercle cyan visible)
+    // const halo = new THREE.Mesh(
+    //   new THREE.SphereGeometry(3, 32, 32),
+    //   new THREE.MeshBasicMaterial({
+    //     color: 0x00aaff,
+    //     transparent: true,
+    //     opacity: 0.015,
+    //     blending: THREE.AdditiveBlending,
+    //     side: THREE.BackSide
+    //   })
+    // );
+    // root.add(halo);
 
-    // EFFET 2: Anneaux holographiques (lignes d'ancrage)
+    // EFFET 2: Anneaux holographiques (petits anneaux - GARDÉS)
     const rings = [];
     for(let i = 0; i < 3; i++) {
       const ring = new THREE.Mesh(
@@ -165,7 +165,7 @@ export default function AppV3Premium() {
         new THREE.MeshBasicMaterial({
           color: 0x00ffff,
           transparent: true,
-          opacity: 0.10 - i * 0.02,  // 0.15→0.10 : plus discret
+          opacity: 0.10 - i * 0.02,
           side: THREE.DoubleSide,
           blending: THREE.AdditiveBlending
         })
@@ -175,10 +175,10 @@ export default function AppV3Premium() {
       rings.push(ring);
     }
 
-    // EFFET 3: Champ d'étoiles
+    // EFFET 3: Champ d'étoiles (ultra-subtil)
     const starsGeometry = new THREE.BufferGeometry();
     const starPositions = [];
-    for(let i = 0; i < 1000; i++) {
+    for(let i = 0; i < 50; i++) {  // 150 → 50 (très rare)
       starPositions.push(
         (Math.random() - 0.5) * 50,
         (Math.random() - 0.5) * 50,
@@ -188,17 +188,17 @@ export default function AppV3Premium() {
     starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
     const stars = new THREE.Points(starsGeometry, new THREE.PointsMaterial({
       color: 0x00ffff,
-      size: 0.02,
-      opacity: 0.25,  // 0.4→0.25 : plus discret
+      size: 0.002,      // 0.003 → 0.002 (ultra-minuscules)
+      opacity: 0.015,   // 0.03 → 0.015 (quasi invisibles)
       transparent: true,
       blending: THREE.AdditiveBlending
     }));
     scene.add(stars);
     
-    // EFFET 3b: Particules flottantes holographiques (nouvelle ambiance)
+    // EFFET 3b: Particules flottantes holographiques (ultra-discrètes)
     const floatingParticlesGeometry = new THREE.BufferGeometry();
     const floatingPositions = [];
-    for(let i = 0; i < 300; i++) {
+    for(let i = 0; i < 30; i++) {  // 300 → 30 (très peu)
       floatingPositions.push(
         (Math.random() - 0.5) * 15,
         (Math.random() - 0.5) * 10 - 5,  // Commence en bas
@@ -208,8 +208,8 @@ export default function AppV3Premium() {
     floatingParticlesGeometry.setAttribute('position', new THREE.Float32BufferAttribute(floatingPositions, 3));
     const floatingParticles = new THREE.Points(floatingParticlesGeometry, new THREE.PointsMaterial({
       color: 0x00ddff,
-      size: 0.05,
-      opacity: 0.6,
+      size: 0.01,       // 0.05 → 0.01 (petites)
+      opacity: 0.08,    // 0.6 → 0.08 (très discrètes)
       transparent: true,
       blending: THREE.AdditiveBlending,
       map: createParticleTexture()
@@ -235,41 +235,40 @@ export default function AppV3Premium() {
     // EFFET 4: Particules directionnelles réactives
     const particleSystem = new DirectionalParticleSystem(scene, 500);
     
-    // EFFET 5: Gradient volumétrique dynamique (brume holographique)
-    // Brume volumétrique TRÈS subtile (opacité réduite)
-    const volumetricFog = new THREE.Mesh(
-      new THREE.SphereGeometry(20, 32, 32),
-      new THREE.ShaderMaterial({
-        vertexShader: `
-          varying vec3 vPosition;
-          void main() {
-            vPosition = position;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-          }
-        `,
-        fragmentShader: `
-          uniform float time;
-          varying vec3 vPosition;
-          
-          void main() {
-            float dist = length(vPosition);
-            float alpha = smoothstep(20.0, 10.0, dist) * 0.03;  // 0.15 → 0.03 (5x plus subtil)
-            
-            // Gradient bleu foncé → cyan
-            vec3 color = mix(vec3(0.0, 0.05, 0.1), vec3(0.0, 0.4, 0.5), dist / 20.0);
-            
-            gl_FragColor = vec4(color, alpha);
-          }
-        `,
-        uniforms: {
-          time: { value: 0 }
-        },
-        transparent: true,
-        side: THREE.BackSide,
-        depthWrite: false
-      })
-    );
-    scene.add(volumetricFog);
+    // EFFET 5: Gradient volumétrique (SUPPRIMÉ - grand cercle visible)
+    // const volumetricFog = new THREE.Mesh(
+    //   new THREE.SphereGeometry(20, 32, 32),
+    //   new THREE.ShaderMaterial({
+    //     vertexShader: `
+    //       varying vec3 vPosition;
+    //       void main() {
+    //         vPosition = position;
+    //         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    //       }
+    //     `,
+    //     fragmentShader: `
+    //       uniform float time;
+    //       varying vec3 vPosition;
+    //       
+    //       void main() {
+    //         float dist = length(vPosition);
+    //         float alpha = smoothstep(20.0, 10.0, dist) * 0.03;
+    //         
+    //         // Gradient bleu foncé → cyan
+    //         vec3 color = mix(vec3(0.0, 0.05, 0.1), vec3(0.0, 0.4, 0.5), dist / 20.0);
+    //         
+    //         gl_FragColor = vec4(color, alpha);
+    //       }
+    //     `,
+    //     uniforms: {
+    //       time: { value: 0 }
+    //     },
+    //     transparent: true,
+    //     side: THREE.BackSide,
+    //     depthWrite: false
+    //   })
+    // );
+    // scene.add(volumetricFog);
 
     // Tableau pour stocker les meshes (pour interactions futures)
     const allMeshes = [];
@@ -803,13 +802,12 @@ export default function AppV3Premium() {
         lastMode = s.mode;
       }
       
-      // Hand Halo (position main)
-      if (s.lastMessage && s.lastMessage.dbg && s.lastMessage.dbg.hands > 0) {
-        // Position fictive (centre écran pour l'instant)
-        handHalo.update({x: 0.5, y: 0.5}, elapsedTime);
-      } else {
-        handHalo.update(null, elapsedTime);
-      }
+      // Hand Halo (DÉSACTIVÉ - grand cercle autour de la main)
+      // if (s.lastMessage && s.lastMessage.dbg && s.lastMessage.dbg.hands > 0) {
+      //   handHalo.update({x: 0.5, y: 0.5}, elapsedTime);
+      // } else {
+      //   handHalo.update(null, elapsedTime);
+      // }
       
       // Effet freeze
       freezeEffect.setActive(isLocked, elapsedTime);
@@ -974,8 +972,8 @@ export default function AppV3Premium() {
         positions.needsUpdate = true;
       }
 
-      // EFFET 7: Pulsation halo
-      halo.scale.setScalar(1.0 + 0.05 * Math.sin(elapsedTime * 2));
+      // EFFET 7: Pulsation halo (DÉSACTIVÉ - halo supprimé)
+      // halo.scale.setScalar(1.0 + 0.05 * Math.sin(elapsedTime * 2));
 
       // EFFET 8: Mise à jour particules directionnelles
       particleSystem.update(deltaTime, s.mode, {
@@ -1070,10 +1068,10 @@ export default function AppV3Premium() {
         window.dispatchEvent(new CustomEvent('measure:update', { detail: { active: false } }));
       }
       
-      // Mettre à jour le fog volumétrique
-      if (volumetricFog) {
-        volumetricFog.material.uniforms.time.value = elapsedTime;
-      }
+      // Mettre à jour le fog volumétrique (DÉSACTIVÉ - fog supprimé)
+      // if (volumetricFog) {
+      //   volumetricFog.material.uniforms.time.value = elapsedTime;
+      // }
 
       // Render avec post-processing
       composer.render();

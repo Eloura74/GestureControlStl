@@ -15,7 +15,7 @@ export default function PerformanceMonitor() {
     latency: 0
   });
 
-  const [isVisible, setIsVisible] = useState(true);
+  const [isVisible, setIsVisible] = useState(false);  // Masqué par défaut
 
   useEffect(() => {
     let frameCount = 0;
