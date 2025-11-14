@@ -163,25 +163,31 @@ export class MultiSTLManager {
             }
           });
           
-          // Aplatir : déplacer tous les meshes directement dans object et supprimer les groupes intermédiaires
+          // Aplatir : déplacer tous les meshes directement dans object et CONSERVER leurs positions world
           meshes.forEach(mesh => {
-            // Sauvegarder la matrice world avant de déplacer
-            const worldMatrix = mesh.matrixWorld.clone();
-            
-            // Retirer du parent actuel et ajouter directement à object
             if (mesh.parent !== object) {
+              // Sauvegarder la position/rotation/scale WORLD
+              const worldPos = new THREE.Vector3();
+              const worldQuat = new THREE.Quaternion();
+              const worldScale = new THREE.Vector3();
+              mesh.getWorldPosition(worldPos);
+              mesh.getWorldQuaternion(worldQuat);
+              mesh.getWorldScale(worldScale);
+              
+              // Retirer du parent actuel et ajouter directement à object
               mesh.parent.remove(mesh);
               object.add(mesh);
               
-              // Appliquer la transformation world pour conserver la position
-              mesh.matrix.copy(worldMatrix);
-              mesh.matrix.decompose(mesh.position, mesh.quaternion, mesh.scale);
+              // Restaurer la position/rotation/scale WORLD comme position locale
+              mesh.position.copy(worldPos);
+              mesh.quaternion.copy(worldQuat);
+              mesh.scale.copy(worldScale);
             }
           });
           
           // Supprimer les groupes intermédiaires vides
           intermediateGroups.forEach(group => {
-            if (group.children.length === 0) {
+            if (group.children.length === 0 && group.parent) {
               group.parent.remove(group);
             }
           });
@@ -205,12 +211,13 @@ export class MultiSTLManager {
           const boxScaled = new THREE.Box3().setFromObject(object);
           const center = boxScaled.getCenter(new THREE.Vector3());
           
-          // Déplacer chaque mesh pour centrer l'assemblage à (0,0,0)
+          // Déplacer CHAQUE MESH pour centrer l'ensemble à (0,0,0)
+          // Ça préserve les positions relatives ET garde le groupe parent à (0,0,0)
           meshes.forEach(mesh => {
             mesh.position.sub(center);
           });
           
-          // Réinitialiser complètement les transformations du groupe parent
+          // Groupe parent reste à l'origine
           object.position.set(0, 0, 0);
           object.rotation.set(0, 0, 0);
           object.scale.set(autoScale, autoScale, autoScale);
@@ -220,7 +227,7 @@ export class MultiSTLManager {
           object.updateMatrix();
           object.updateMatrixWorld(true);
           
-          console.log(`📍 OBJ Group reset: pos=(0,0,0), rot=(0,0,0), scale=(${autoScale.toFixed(4)})`);
+          console.log(`📍 OBJ Group: pos=(${object.position.x.toFixed(2)},${object.position.y.toFixed(2)},${object.position.z.toFixed(2)}), rot=(0,0,0), scale=(${autoScale.toFixed(4)})`);
 
           
           // Recalculer la bounding box APRÈS le centrage
@@ -228,39 +235,50 @@ export class MultiSTLManager {
           const globalCenter = new THREE.Vector3(0, 0, 0); // Le centre est maintenant à l'origine
           
           // Stocker les positions de chaque mesh pour l'explosion
-          // IMPORTANT : Calculer depuis le centre de la géométrie, pas la position du mesh
-          meshes.forEach((mesh, idx) => {
-            // Calculer le centre réel de ce mesh depuis sa géométrie
+          // EXPLOSION TECHNIQUE LINÉAIRE (style Sketchfab)
+          
+          // 1. Calculer l'axe principal du modèle (axe le plus long)
+          const modelBox = new THREE.Box3().setFromObject(object);
+          const modelSize = new THREE.Vector3();
+          modelBox.getSize(modelSize);
+          
+          // FORCER l'axe Y (vertical) pour l'explosion
+          // Cela donne une vue technique plus claire (empilement vertical)
+          const mainAxis = 'y';
+          
+          console.log(`📐 Model size: (${modelSize.x.toFixed(2)}, ${modelSize.y.toFixed(2)}, ${modelSize.z.toFixed(2)}) → Forced axis: ${mainAxis.toUpperCase()} (vertical)`);
+          
+          // 2. Trier les meshes par position sur l'axe principal
+          const sortedMeshes = meshes.map((mesh, idx) => {
             mesh.geometry.computeBoundingBox();
             const meshBox = mesh.geometry.boundingBox;
             const meshCenter = new THREE.Vector3();
             meshBox.getCenter(meshCenter);
-            
-            // Appliquer les transformations du mesh et du parent pour obtenir la position world
             meshCenter.applyMatrix4(mesh.matrixWorld);
             
-            // Direction depuis l'origine vers le centre de ce mesh
-            const directionFromCenter = meshCenter.clone();
+            return { 
+              mesh, 
+              idx, 
+              center: meshCenter,
+              axisPos: meshCenter[mainAxis]
+            };
+          }).sort((a, b) => a.axisPos - b.axisPos);
+          
+          // 3. Assigner index de tri pour explosion LINÉAIRE (pas de direction)
+          sortedMeshes.forEach((item, sortedIdx) => {
+            const { mesh, center } = item;
             
-            // Si la direction est quasi nulle, utiliser une direction basée sur l'index
-            if (directionFromCenter.length() < 0.01) {
-              const angle = (idx / meshes.length) * Math.PI * 2;
-              directionFromCenter.set(
-                Math.cos(angle),
-                Math.sin(angle),
-                (idx % 2) * 0.5 - 0.25
-              );
-            }
-            
-            // Stocker la position locale du mesh (pour le replacer)
+            // Stocker SEULEMENT les données nécessaires (pas de direction)
             mesh.userData.initialLocalPosition = mesh.position.clone();
-            mesh.userData.meshCenterWorld = meshCenter.clone();
-            mesh.userData.explodeDirection = directionFromCenter.normalize();
-            
-            // Garder matrixAutoUpdate = true pour que Three.js prenne en compte les changements de position
+            mesh.userData.sortedIndex = sortedIdx; // Index dans l'ordre trié
+            mesh.userData.totalMeshes = meshes.length;
+            mesh.userData.axisValue = center[mainAxis]; // Position sur l'axe principal
             mesh.matrixAutoUpdate = true;
             
-            console.log(`  🎯 Mesh "${mesh.name}": center=(${meshCenter.x.toFixed(3)},${meshCenter.y.toFixed(3)},${meshCenter.z.toFixed(3)}), dir=(${directionFromCenter.x.toFixed(2)},${directionFromCenter.y.toFixed(2)},${directionFromCenter.z.toFixed(2)})`);
+            // Log des premières pièces seulement
+            if (sortedIdx < 3) {
+              console.log(`  🎯 Mesh ${sortedIdx}/"${mesh.name}": ${mainAxis}=${center[mainAxis].toFixed(2)}, sortedIdx=${sortedIdx}`);
+            }
           });
           
           console.log(`✅ ${meshes.length} meshes ready for explosion`);
@@ -272,6 +290,7 @@ export class MultiSTLManager {
           model.meshes = meshes;
           model.loaded = true;
           model.hasMultipleParts = meshes.length > 1;
+          model.mainAxis = mainAxis; // Stocker l'axe principal pour l'explosion
           
           this.isLoading = false;
           
@@ -475,35 +494,52 @@ export class MultiSTLManager {
       // OBJ avec plusieurs parties : éclater chaque mesh
       let appliedCount = 0;
       
+      // EXPLOSION LINÉAIRE : modifier SEULEMENT l'axe principal
+      const mainAxis = currentModel.mainAxis || 'y';
+      const totalMeshes = currentModel.meshes.length;
+      // Espacement adaptatif : GRANDE valeur par défaut pour vue technique
+      let spacing = 8.0;  // Espacement par défaut (6 → 8)
+      if (totalMeshes > 50) spacing = 5.0;  // Beaucoup de pièces → espacement réduit
+      else if (totalMeshes > 20) spacing = 10.0;  // Moyennement → espacement très grand
+      else if (totalMeshes <= 5) spacing = 12.0; // Peu de pièces → espacement énorme
+      else spacing = 8.0; // 6-20 pièces → espacement grand
+      
+      // Log seulement si changement (pas à chaque frame)
+      if (factor > 0.1 && !this._lastLoggedFactor) {
+        console.log(`🔧 Explosion: ${totalMeshes} meshes, spacing=${spacing}, axis=${mainAxis.toUpperCase()}, spread=${(totalMeshes-1)*spacing} units`);
+      }
+      
       currentModel.meshes.forEach((mesh, idx) => {
         const initialLocalPos = mesh.userData.initialLocalPosition;
-        const explodeDirection = mesh.userData.explodeDirection;
+        const sortedIndex = mesh.userData.sortedIndex;
+        const totalMeshes = mesh.userData.totalMeshes;
         
-        if (!initialLocalPos || !explodeDirection) {
-          if (factor > 0.1 && idx === 0) {
-            console.warn("⚠️ No initial data for mesh", mesh.name, {
-              hasLocalPos: !!initialLocalPos,
-              hasDirection: !!explodeDirection
-            });
-          }
+        if (!initialLocalPos || sortedIndex === undefined) {
           return;
         }
         
-        const explodeDistance = 2.5; // Distance maximale d'éclatement
+        // EXPLOSION LINÉAIRE : offset sur l'axe principal seulement
+        // Centré autour de 0, espacé régulièrement
+        const centerOffset = (totalMeshes - 1) / 2.0;
+        const targetAxisPosition = (sortedIndex - centerOffset) * spacing;
         
-        // Calculer l'offset d'explosion
-        const offset = explodeDirection.clone().multiplyScalar(factor * explodeDistance);
+        // Calculer l'offset à appliquer (position cible - position initiale)
+        const initialAxisPos = initialLocalPos[mainAxis];
+        const offsetAxis = (targetAxisPosition - initialAxisPos) * factor;
         
-        // Appliquer la nouvelle position
-        const newPos = initialLocalPos.clone().add(offset);
-        mesh.position.set(newPos.x, newPos.y, newPos.z);
+        // IMPORTANT : Garder les positions initiales et ajouter seulement l'offset sur l'axe
+        mesh.position.copy(initialLocalPos);
+        mesh.position[mainAxis] = initialAxisPos + offsetAxis;
         
         appliedCount++;
         
-        // Log détaillé pour le premier mesh lors de forte explosion
-        if (factor > 0.3 && idx === 0 && !this._detailedLogged) {
-          console.log(`💥 Mesh 0 explosion: initial=(${initialLocalPos.x.toFixed(3)},${initialLocalPos.y.toFixed(3)},${initialLocalPos.z.toFixed(3)}), offset=(${offset.x.toFixed(3)},${offset.y.toFixed(3)},${offset.z.toFixed(3)}), final=(${mesh.position.x.toFixed(3)},${mesh.position.y.toFixed(3)},${mesh.position.z.toFixed(3)})`);
-          this._detailedLogged = true;
+        // Log détaillé des premières pièces
+        if (factor > 0.3 && idx < 3 && !this._detailedLogged) {
+          console.log(`💥 Mesh ${idx}: sortedIdx=${sortedIndex}, ${mainAxis}: ${initialAxisPos.toFixed(2)} → ${mesh.position[mainAxis].toFixed(2)} (target=${targetAxisPosition.toFixed(2)})`);
+          if (idx === 2) {
+            console.log(`📊 Total: ${totalMeshes} meshes, axis=${mainAxis.toUpperCase()}, spacing=${spacing}, spread=${((totalMeshes-1) * spacing).toFixed(1)} units`);
+            this._detailedLogged = true;
+          }
         }
       });
       

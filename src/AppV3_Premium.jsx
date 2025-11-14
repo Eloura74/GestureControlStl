@@ -175,46 +175,46 @@ export default function AppV3Premium() {
       rings.push(ring);
     }
 
-    // EFFET 3: Champ d'étoiles (ultra-subtil)
-    const starsGeometry = new THREE.BufferGeometry();
-    const starPositions = [];
-    for(let i = 0; i < 50; i++) {  // 150 → 50 (très rare)
-      starPositions.push(
-        (Math.random() - 0.5) * 50,
-        (Math.random() - 0.5) * 50,
-        (Math.random() - 0.5) * 50
-      );
-    }
-    starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
-    const stars = new THREE.Points(starsGeometry, new THREE.PointsMaterial({
+    // EFFET 3: Champ d'étoiles (DÉSACTIVÉ temporairement pour debug vue éclatée)
+    // const starsGeometry = new THREE.BufferGeometry();
+    // const starPositions = [];
+    // for(let i = 0; i < 50; i++) {
+    //   starPositions.push(
+    //     (Math.random() - 0.5) * 50,
+    //     (Math.random() - 0.5) * 50,
+    //     (Math.random() - 0.5) * 50
+    //   );
+    // }
+    // starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
+    const stars = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({
       color: 0x00ffff,
-      size: 0.002,      // 0.003 → 0.002 (ultra-minuscules)
-      opacity: 0.015,   // 0.03 → 0.015 (quasi invisibles)
+      size: 0.002,
+      opacity: 0.015,
       transparent: true,
       blending: THREE.AdditiveBlending
     }));
     scene.add(stars);
     
-    // EFFET 3b: Particules flottantes holographiques (ultra-discrètes)
-    const floatingParticlesGeometry = new THREE.BufferGeometry();
-    const floatingPositions = [];
-    for(let i = 0; i < 30; i++) {  // 300 → 30 (très peu)
-      floatingPositions.push(
-        (Math.random() - 0.5) * 15,
-        (Math.random() - 0.5) * 10 - 5,  // Commence en bas
-        (Math.random() - 0.5) * 15
-      );
-    }
-    floatingParticlesGeometry.setAttribute('position', new THREE.Float32BufferAttribute(floatingPositions, 3));
-    const floatingParticles = new THREE.Points(floatingParticlesGeometry, new THREE.PointsMaterial({
-      color: 0x00ddff,
-      size: 0.01,       // 0.05 → 0.01 (petites)
-      opacity: 0.08,    // 0.6 → 0.08 (très discrètes)
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      map: createParticleTexture()
-    }));
-    scene.add(floatingParticles);
+    // EFFET 3b: Particules flottantes (DÉSACTIVÉ temporairement pour debug)
+    const floatingParticles = null;
+    // const floatingParticlesGeometry = new THREE.BufferGeometry();
+    // const floatingPositions = [];
+    // for(let i = 0; i < 30; i++) {
+    //   floatingPositions.push(
+    //     (Math.random() - 0.5) * 15,
+    //     (Math.random() - 0.5) * 15,
+    //     (Math.random() - 0.5) * 15
+    //   );
+    // }
+    // floatingParticlesGeometry.setAttribute('position', new THREE.Float32BufferAttribute(floatingPositions, 3));
+    // const floatingParticles = new THREE.Points(floatingParticlesGeometry, new THREE.PointsMaterial({
+    //   color: 0x00ddff,
+    //   size: 0.01,
+    //   opacity: 0.08,
+    //   transparent: true,
+    //   blending: THREE.AdditiveBlending
+    // }));
+    // scene.add(floatingParticles);
     
     // Fonction pour créer une texture de particule (rond flou)
     function createParticleTexture() {
@@ -300,6 +300,8 @@ export default function AppV3Premium() {
     multiSTL.addModel("/models/Frame_Bolt.stl", "Frame Bolt");
     multiSTL.addModel("/models/roller_bearing.stl", "Roller Bearing");
     multiSTL.addModel("/models/bearing.obj", "Bearing");
+    multiSTL.addModel("/models/arcReacor.obj", "Arc Reactor");
+    
 
     // Charger tous les modèles au démarrage
     (async () => {
@@ -310,7 +312,8 @@ export default function AppV3Premium() {
         await Promise.all([
           multiSTL.loadModel(0),
           multiSTL.loadModel(1),
-          multiSTL.loadModel(2)  // ← Ajouter
+          multiSTL.loadModel(2),  // ← Ajouter
+          multiSTL.loadModel(3)  // ← Ajouter
         ]);
         
         console.log("✅ Tous les modèles chargés");
@@ -934,6 +937,9 @@ export default function AppV3Premium() {
       if (!isLocked) {
         s.rotX = THREE.MathUtils.damp(s.rotX, s.targetRotX, 5, deltaTime);
         s.rotY = THREE.MathUtils.damp(s.rotY, s.targetRotY, 5, deltaTime);
+        
+        // PAS de dézoom automatique lors de l'explosion (désactivé par l'utilisateur)
+        // La distance reste celle définie par l'utilisateur avec le zoom manuel
         s.distance = THREE.MathUtils.damp(s.distance, s.targetDistance, 5, deltaTime);
 
         root.rotation.x = s.rotX;
@@ -953,8 +959,8 @@ export default function AppV3Premium() {
         ring.material.opacity = (0.10 - i * 0.02) + 0.02 * Math.sin(elapsedTime * 2 + i);
       });
 
-      // EFFET 6: Rotation lente des étoiles
-      stars.rotation.y = elapsedTime * 0.02;
+      // EFFET 6: Rotation lente des étoiles (DÉSACTIVÉ)
+      // stars.rotation.y = elapsedTime * 0.02;
       
       // EFFET 7: Animer les particules flottantes (si créées)
       if (floatingParticles) {
